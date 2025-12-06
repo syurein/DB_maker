@@ -133,15 +133,9 @@ class FastScraperLogic:
         except: return None
 
     def parse_page(self, html_content):
-        """
-        HTMLを受け取り、BeautifulSoupオブジェクトを返す。
-        """
         return BeautifulSoup(html_content, 'html.parser')
 
     def find_items(self, soup):
-        """
-        Soupから商品コンテナリストを探す (AI修復付き)
-        """
         key = "item_container"
         max_retries = 5
         retries = 0
@@ -156,7 +150,6 @@ class FastScraperLogic:
             if not self.use_ai_healing:
                 break
 
-            # AI修復
             print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
             html_snippet = self._clean_html_for_ai(str(soup))
             new_sel = self._ask_ai_for_selector(html_snippet, "Item container element (li or div) in the search result grid", candidates)
@@ -171,9 +164,6 @@ class FastScraperLogic:
         return []
 
     def extract_text(self, item_soup, key, description):
-        """
-        商品コンテナ(soup)からテキスト/属性を抽出 (AI修復付き)
-        """
         max_retries = 5
         retries = 0
 
@@ -192,7 +182,6 @@ class FastScraperLogic:
             if not self.use_ai_healing:
                 break
 
-            # AI修復
             print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
             item_html_snippet = self._clean_html_for_ai(str(item_soup))
             new_sel = self._ask_ai_for_selector(item_html_snippet, description, candidates)
@@ -207,8 +196,6 @@ class FastScraperLogic:
         return ""
     
     def extract_image_url(self, item_soup):
-        # 画像URL取得（高速化のため固定ロジック＋簡易探索）
-        # Mercariは通常 img タグの src または data-src
         img = item_soup.select_one("img")
         if img:
             return img.get('src') or img.get('data-src')
@@ -333,7 +320,6 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
     print(f"✅ Worker {worker_id}: 完了")
     return
 
-
 # --- 共有カウンター ---
 class SharedCounter:
     def __init__(self, initial_value=0):
@@ -368,10 +354,11 @@ class MercariFastScraper:
         safe_kw = "".join([c for c in keyword if c.isalnum()])
         csv_filename = os.path.join(BASE_DIR, f"{safe_kw}_{total_limit}件_爆速版.csv")
         
+        pd.DataFrame(columns=["商品名", "価格", "画像パス", "URL"]).to_csv(csv_filename, index=False, encoding="utf-8-sig")
+        
         print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}, AI修復={use_ai_healing}, Headless={headless_mode}")
         
         futures = []
-        all_results = []
         shared_counter = SharedCounter()
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -397,31 +384,39 @@ class MercariFastScraper:
                         model=self.model_name,
                         download_images=download_images,
                         use_ai_healing=use_ai_healing,
-                        headless_mode=headless_mode
+                        headless_mode=headless_mode,
+                        csv_filename=csv_filename
                     )
                 )
             
             for future in concurrent.futures.as_completed(futures):
                 try:
-                    res = future.result()
-                    if res:
-                        all_results.extend(res)
+                    future.result()
                     progress(min(1.0, shared_counter.value / total_limit), desc=f"取得中... {shared_counter.value}/{total_limit}件")
                 except Exception as e:
                     print(f"A worker failed: {e}")
 
         progress(1, desc=f"完了！ {shared_counter.value}/{total_limit}件")
 
-        if all_results:
-            df = pd.DataFrame(all_results)
-            df = df.drop_duplicates(subset=["URL"], keep='first')
+        try:
+            df = pd.read_csv(csv_filename)
+            initial_count = len(df)
+            if "URL" in df.columns:
+                df = df.drop_duplicates(subset=["URL"], keep='first')
+            final_count = len(df)
+            
             if len(df) > total_limit:
                 df = df.head(total_limit)
-            
+                final_count = len(df)
+
             df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-            return f"完了！ 合計{len(df)}件取得しました。\nファイル: {csv_filename}", csv_filename
-        else:
-            return "エラー: データなし", None
+            
+            print(f"重複除去: {initial_count} -> {final_count} 件")
+            return f"完了！ 合計{final_count}件取得しました。\nファイル: {csv_filename}", csv_filename
+        except FileNotFoundError:
+            return "エラー: データが1件も取得されませんでした。", None
+        except Exception as e:
+            return f"エラー: CSV処理中に問題が発生しました - {e}", None
 
 # --- UI ---
 def start_scraping(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images, use_ai_healing, headless_mode):
