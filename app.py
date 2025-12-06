@@ -362,7 +362,7 @@ class MercariFastScraper:
         if keyword:
             filename_parts.append("".join([c for c in keyword if c.isalnum()]))
         if category_name:
-            sanitized_cat = category_name.replace(">", "_").replace(" ", "")
+            sanitized_cat = category_name.replace(">", "_").replace(" ", "").replace("/", "_")
             filename_parts.append(sanitized_cat)
         if status:
             filename_parts.append(status)
