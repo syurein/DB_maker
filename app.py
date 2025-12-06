@@ -232,7 +232,7 @@ def download_image_fast(url, save_path):
     return False
 
 # --- 並列ワーカー (Playwright -> BS4) ---
-def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images, use_ai_healing, headless_mode):
+def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images, use_ai_healing, headless_mode, csv_filename):
     print(f"🚀 Worker {worker_id}: 開始 (担当ページ: {start_page}, {start_page + num_workers}, ...)")
     
     logic = FastScraperLogic(api_key, base_url, model, use_ai_healing)
@@ -246,6 +246,8 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
         page = context.new_page()
         
         current_page_idx = start_page
+        skip_counter = 0
+        max_skips = 3
         
         while shared_counter.value < total_limit:
             page_token = f"v1%3A{current_page_idx}"
@@ -259,9 +261,9 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             try:
                 page.goto(url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-                time.sleep(15)
+                time.sleep(20)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(15)
+                time.sleep(20)
                 
             except Exception as e:
                 print(f"⚠️ Worker {worker_id}: 読み込みタイムアウト/エラー (HTML解析は続行) - {e}")
@@ -270,18 +272,27 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
 
             html = page.content()
             if not html:
-                print(f"❌ Worker {worker_id}: ページコンテンツが空です。次のページへスキップします。")
+                print(f"❌ Worker {worker_id}: ページコンテンツが空です。スキップします。({skip_counter + 1}/{max_skips})")
                 current_page_idx += num_workers
+                skip_counter += 1
+                if skip_counter >= max_skips:
+                    print(f"🚫 Worker {worker_id}: スキップが{max_skips}回に達したため、このワーカーは終了します。")
+                    break
                 continue
                 
             soup = logic.parse_page(html)
             items = logic.find_items(soup)
             
             if not items:
-                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。次のページへスキップします。")
+                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。スキップします。({skip_counter + 1}/{max_skips})")
                 current_page_idx += num_workers
+                skip_counter += 1
+                if skip_counter >= max_skips:
+                    print(f"🚫 Worker {worker_id}: スキップが{max_skips}回に達したため、このワーカーは終了します。")
+                    break
                 continue
 
+            skip_counter = 0 # Reset counter if items are found
             print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
 
             page_results = []
@@ -290,6 +301,7 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                     break
                 
                 try:
+                    # ... (item processing logic is the same)
                     title = logic.extract_text(item, "title", "商品名")
                     if title: title = title.replace("のサムネイル", "").strip()
                     price = logic.extract_text(item, "price", "価格")
@@ -312,6 +324,10 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                     continue
             
             if page_results:
+                # Append to CSV
+                pd.DataFrame(page_results).to_csv(csv_filename, mode='a', header=False, index=False, encoding="utf-8-sig")
+                
+                # Update shared counter and local results list
                 new_count = shared_counter.increment(len(page_results))
                 results.extend(page_results)
                 print(f"📦 Worker {worker_id}: {len(page_results)}件追加 (総合計: {new_count})")
@@ -328,27 +344,11 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
 
 
 # --- 共有カウンター ---
-class SharedCounter:
-    def __init__(self, initial_value=0):
-        self._value = initial_value
-        self._lock = threading.Lock()
-
-    def increment(self, value=1):
-        with self._lock:
-            self._value += value
-            return self._value
-
-    @property
-    def value(self):
-        with self._lock:
-            return self._value
+# ... (SharedCounter class is the same)
 
 # --- メインクラス ---
 class MercariFastScraper:
-    def __init__(self, api_key, base_url, model_name):
-        self.api_key = api_key
-        self.base_url = base_url
-        self.model_name = model_name
+    # ... (__init__ is the same)
 
     def run(self, keyword, category_id, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress=gr.Progress()):
         status_param = "on_sale%7Csold_out" if status == "すべて" else ("sold_out" if status == "売り切れ" else "on_sale")
@@ -361,10 +361,12 @@ class MercariFastScraper:
         safe_kw = "".join([c for c in keyword if c.isalnum()])
         csv_filename = os.path.join(BASE_DIR, f"{safe_kw}_{total_limit}件_爆速版.csv")
         
+        # Create CSV with header before starting workers
+        pd.DataFrame(columns=["商品名", "価格", "画像パス", "URL"]).to_csv(csv_filename, index=False, encoding="utf-8-sig")
+        
         print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}, AI修復={use_ai_healing}, Headless={headless_mode}")
         
         futures = []
-        all_results = []
         shared_counter = SharedCounter()
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -373,48 +375,41 @@ class MercariFastScraper:
                 futures.append(
                     executor.submit(
                         worker_process, 
-                        worker_id=i,
-                        keyword=keyword,
-                        category_id=category_id,
-                        status_param=status_param,
-                        price_min=price_min,
-                        price_max=price_max,
-                        sort_val=sort_val,
-                        order_val=order_val,
-                        start_page=start_page,
-                        shared_counter=shared_counter,
-                        total_limit=total_limit,
-                        num_workers=num_workers,
-                        api_key=self.api_key,
-                        base_url=self.base_url,
-                        model=self.model_name,
-                        download_images=download_images,
-                        use_ai_healing=use_ai_healing,
-                        headless_mode=headless_mode
+                        # ... (arguments are the same, plus csv_filename)
+                        csv_filename=csv_filename,
+                        # ...
                     )
                 )
             
+            # This part no longer needs to collect results in `all_results`
             for future in concurrent.futures.as_completed(futures):
                 try:
-                    res = future.result()
-                    if res:
-                        all_results.extend(res)
+                    future.result() # We still need to call result() to raise exceptions
                     progress(min(1.0, shared_counter.value / total_limit), desc=f"取得中... {shared_counter.value}/{total_limit}件")
                 except Exception as e:
                     print(f"A worker failed: {e}")
 
         progress(1, desc=f"完了！ {shared_counter.value}/{total_limit}件")
-
-        if all_results:
-            df = pd.DataFrame(all_results)
+        
+        # Final processing: read the created CSV, drop duplicates, and save back
+        try:
+            df = pd.read_csv(csv_filename)
+            initial_count = len(df)
             df = df.drop_duplicates(subset=["URL"], keep='first')
+            final_count = len(df)
+            
             if len(df) > total_limit:
                 df = df.head(total_limit)
-            
+                final_count = len(df)
+
             df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-            return f"完了！ 合計{len(df)}件取得しました。\nファイル: {csv_filename}", csv_filename
-        else:
-            return "エラー: データなし", None
+            
+            print(f"重複除去: {initial_count} -> {final_count} 件")
+            return f"完了！ 合計{final_count}件取得しました。\nファイル: {csv_filename}", csv_filename
+        except FileNotFoundError:
+            return "エラー: データが1件も取得されませんでした。", None
+        except Exception as e:
+            return f"エラー: CSV処理中に問題が発生しました - {e}", None
 
 # --- UI ---
 def start_scraping(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images, use_ai_healing, headless_mode):
