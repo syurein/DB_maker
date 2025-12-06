@@ -1,0 +1,16 @@
+{
+  "item_container": [
+    "li[data-testid='item-cell']",
+    "div[data-testid='item-cell']"
+  ],
+  "title": [
+    "[data-testid='product-name']",
+    "img[alt]",
+    "[data-testid='thumbnail-image']"
+  ],
+  "price": [
+    "[class*='price']",
+    ".number__6b270ca7",
+    "[data-testid='price']"
+  ]
+}
