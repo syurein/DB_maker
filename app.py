@@ -90,6 +90,7 @@ class SelectorManager:
         except: pass
 
     def get_candidates(self, key):
+        self.selectors = self._load()
         val = self.selectors.get(key, [])
         return [val] if isinstance(val, str) else val
 
