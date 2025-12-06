@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 import concurrent.futures
 import math
+import threading
 
 # 1. Google Driveマウント (Colab用)
 if os.path.exists('/content/drive'):
@@ -41,7 +42,7 @@ DEFAULT_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.openai.com/v1")
 DEFAULT_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
 
 # 定数
-TIMEOUT_MS = 150000  # 読み込みタイムアウト
+TIMEOUT_MS = 300000  # 読み込みタイムアウト
 
 # --- カテゴリマップ ---
 def load_category_map(csv_path):
@@ -225,7 +226,7 @@ def download_image_fast(url, save_path):
     return False
 
 # --- 並列ワーカー (Playwright -> BS4) ---
-def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, limit_per_worker, api_key, base_url, model, download_images):
+def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, api_key, base_url, model, download_images):
     print(f"🚀 Worker {worker_id}: 開始")
     
     logic = FastScraperLogic(api_key, base_url, model)
@@ -233,16 +234,14 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
-        # 画像読み込みをブロックしない（遅延ロード画像を取得するため）
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         )
         page = context.new_page()
         
-        count = 0
         current_page_idx = start_page
         
-        while count < limit_per_worker:
+        while shared_counter.value < total_limit:
             page_token = f"v1%3A{current_page_idx}"
             url = f"https://jp.mercari.com/search?keyword={quote(keyword)}&status={status_param}&sort={sort_val}&order={order_val}&page_token={page_token}"
             if category_id: url += f"&category_id={category_id}"
@@ -252,11 +251,7 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             print(f"🌍 Worker {worker_id}: Accessing Page {current_page_idx}...")
             
             try:
-                # ページ遷移
                 page.goto(url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
-                
-                # ★ここが重要: 画像の遅延読み込み (Lazy Loading) を発火させるために少しスクロール
-                # Mercariはスクロールしないとimg srcが空の場合がある
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
                 time.sleep(0.5)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -267,11 +262,13 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                 try: page.evaluate("window.stop()")
                 except: pass
 
-            # ★ここから爆速パート: HTMLを文字列として取得してBS4に渡す
             html = page.content()
+            if not html:
+                print(f"❌ Worker {worker_id}: ページコンテンツが空です。スキップします。")
+                current_page_idx += 1
+                continue
+                
             soup = logic.parse_page(html)
-            
-            # BS4で解析
             items = logic.find_items(soup)
             
             if not items:
@@ -280,16 +277,15 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
 
             print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
 
+            page_results = []
             for item in items:
-                if count >= limit_per_worker: break
+                if shared_counter.value >= total_limit:
+                    break
                 
                 try:
-                    # BS4でテキスト抽出（メモリ処理なので一瞬）
                     title = logic.extract_text(item, "title", "商品名")
                     if title: title = title.replace("のサムネイル", "").strip()
-                    
                     price = logic.extract_text(item, "price", "価格")
-                    
                     img_src = logic.extract_image_url(item)
                     product_url = logic.extract_product_url(item)
 
@@ -298,16 +294,23 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                     
                     img_filename = "SKIP"
                     if download_images and img_src:
-                        safe_name = f"{worker_id}_{current_page_idx}_{count}_{int(time.time())}.jpg"
+                        safe_name = f"{worker_id}_{current_page_idx}_{len(page_results)}_{int(time.time())}.jpg"
                         save_path = os.path.join(IMAGE_DIR, safe_name)
                         if download_image_fast(img_src, save_path):
                             img_filename = safe_name
                     
                     row = {"商品名": title, "価格": price, "画像パス": img_filename, "URL": product_url}
-                    results.append(row)
-                    count += 1
+                    page_results.append(row)
                 except Exception as e:
                     continue
+            
+            if page_results:
+                new_count = shared_counter.increment(len(page_results))
+                results.extend(page_results)
+                print(f"📦 Worker {worker_id}: {len(page_results)}件追加 (合計: {new_count})")
+
+            if shared_counter.value >= total_limit:
+                break
             
             current_page_idx += 1
             
@@ -315,6 +318,23 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
     
     print(f"✅ Worker {worker_id}: 完了 ({len(results)}件)")
     return results
+
+
+# --- 共有カウンター ---
+class SharedCounter:
+    def __init__(self, initial_value=0):
+        self._value = initial_value
+        self._lock = threading.Lock()
+
+    def increment(self, value=1):
+        with self._lock:
+            self._value += value
+            return self._value
+
+    @property
+    def value(self):
+        with self._lock:
+            return self._value
 
 # --- メインクラス ---
 class MercariFastScraper:
@@ -334,18 +354,15 @@ class MercariFastScraper:
         safe_kw = "".join([c for c in keyword if c.isalnum()])
         csv_filename = os.path.join(BASE_DIR, f"{safe_kw}_{total_limit}件_爆速版.csv")
         
-        # 1ページあたり約100件と仮定して、Workerへの割り振りを計算
-        limit_per_worker = math.ceil(total_limit / num_workers)
-        
         print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}")
         
         futures = []
         all_results = []
+        shared_counter = SharedCounter()
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             for i in range(num_workers):
-                # 開始ページをずらす (Worker 1: 0~, Worker 2: 5~ ...)
-                start_page = i * 5 
+                start_page = i * 5
                 futures.append(
                     executor.submit(
                         worker_process, 
@@ -358,7 +375,8 @@ class MercariFastScraper:
                         sort_val=sort_val,
                         order_val=order_val,
                         start_page=start_page,
-                        limit_per_worker=limit_per_worker,
+                        shared_counter=shared_counter,
+                        total_limit=total_limit,
                         api_key=self.api_key,
                         base_url=self.base_url,
                         model=self.model_name,
@@ -366,17 +384,27 @@ class MercariFastScraper:
                     )
                 )
             
-            completed = 0
+            # 完了したワーカーから結果を随時受け取る
             for future in concurrent.futures.as_completed(futures):
-                res = future.result()
-                all_results.extend(res)
-                completed += 1
-                progress(completed / num_workers, desc=f"Worker完了: {completed}/{num_workers}")
+                try:
+                    res = future.result()
+                    if res:
+                        all_results.extend(res)
+                    # 進捗の更新（カウンターの値を見る）
+                    progress(shared_counter.value / total_limit, desc=f"取得中... {shared_counter.value}/{total_limit}件")
+                except Exception as e:
+                    print(f"A worker failed: {e}")
+
+        # 進捗を100%に
+        progress(1, desc=f"完了！ {shared_counter.value}/{total_limit}件")
 
         if all_results:
             df = pd.DataFrame(all_results)
-            # 重複除去（URLベース）
             df = df.drop_duplicates(subset=["URL"], keep='first')
+            # 最終的な件数をtotal_limitに合わせる
+            if len(df) > total_limit:
+                df = df.head(total_limit)
+            
             df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
             return f"完了！ 合計{len(df)}件取得しました。\nファイル: {csv_filename}", csv_filename
         else:
