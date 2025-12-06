@@ -247,9 +247,9 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             try:
                 page.goto(url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-                time.sleep(20)
+                time.sleep(50)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(20)
+                time.sleep(50)
                 
             except Exception as e:
                 print(f"⚠️ Worker {worker_id}: 読み込みタイムアウト/エラー (HTML解析は続行) - {e}")
@@ -403,6 +403,10 @@ class MercariFastScraper:
             initial_count = len(df)
             if "URL" in df.columns:
                 df = df.drop_duplicates(subset=["URL"], keep='first')
+            
+            if "画像パス" in df.columns:
+                df = df[df["画像パス"] != "SKIP"]
+
             final_count = len(df)
             
             if len(df) > total_limit:
