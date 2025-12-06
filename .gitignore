@@ -1,0 +1,8 @@
+# Ignore all jpg files
+*.jpg
+
+# Ignore the downloaded_images directory
+downloaded_images/
+
+# Ignore environment variables
+.env
