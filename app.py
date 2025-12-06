@@ -281,7 +281,7 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             skip_counter = 0
             print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
 
-            page_results = []
+            page_results_to_write = []
             for item in items:
                 if shared_counter.value >= total_limit:
                     break
@@ -294,21 +294,28 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                     product_url = logic.extract_product_url(item)
                     title = title or "取得失敗"
                     price = price or "0"
+                    
                     img_filename = "SKIP"
+                    is_valid = not download_images
+
                     if download_images and img_src:
-                        safe_name = f"{worker_id}_{current_page_idx}_{len(page_results)}_{int(time.time())}.jpg"
+                        safe_name = f"{worker_id}_{current_page_idx}_{len(page_results_to_write)}_{int(time.time())}.jpg"
                         save_path = os.path.join(IMAGE_DIR, safe_name)
                         if download_image_fast(img_src, save_path):
                             img_filename = safe_name
-                    row = {"商品名": title, "価格": price, "画像パス": img_filename, "URL": product_url}
-                    page_results.append(row)
+                            is_valid = True
+                    
+                    if is_valid:
+                        row = {"商品名": title, "価格": price, "画像パス": img_filename, "URL": product_url}
+                        page_results_to_write.append(row)
+
                 except Exception as e:
                     continue
             
-            if page_results:
-                pd.DataFrame(page_results).to_csv(csv_filename, mode='a', header=False, index=False, encoding="utf-8-sig")
-                new_count = shared_counter.increment(len(page_results))
-                print(f"📦 Worker {worker_id}: {len(page_results)}件追加 (総合計: {new_count})")
+            if page_results_to_write:
+                pd.DataFrame(page_results_to_write).to_csv(csv_filename, mode='a', header=False, index=False, encoding="utf-8-sig")
+                new_count = shared_counter.increment(len(page_results_to_write))
+                print(f"📦 Worker {worker_id}: {len(page_results_to_write)}件追加 (総合計: {new_count})")
 
             if shared_counter.value >= total_limit:
                 break
@@ -403,10 +410,6 @@ class MercariFastScraper:
             initial_count = len(df)
             if "URL" in df.columns:
                 df = df.drop_duplicates(subset=["URL"], keep='first')
-            
-            if "画像パス" in df.columns:
-                df = df[df["画像パス"] != "SKIP"]
-
             final_count = len(df)
             
             if len(df) > total_limit:
