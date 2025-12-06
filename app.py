@@ -112,7 +112,7 @@ class FastScraperLogic:
         soup = BeautifulSoup(html_content, 'html.parser')
         for tag in soup(['script', 'style', 'svg', 'path', 'noscript', 'iframe', 'meta', 'link']):
             tag.decompose()
-        return str(soup)[:20000]
+        return str(soup)[:200000]
 
     def _ask_ai_for_selector(self, html_snippet, target_description, failed_selectors=None):
         if not self.client: return None
@@ -253,9 +253,9 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             try:
                 page.goto(url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-                time.sleep(0.5)
+                time.sleep(15)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(3.0)
+                time.sleep(15)
                 
             except Exception as e:
                 print(f"⚠️ Worker {worker_id}: 読み込みタイムアウト/エラー (HTML解析は続行) - {e}")
@@ -272,8 +272,9 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             items = logic.find_items(soup)
             
             if not items:
-                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。このワーカーは終了します。")
-                break
+                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。次のページへスキップします。")
+                current_page_idx += num_workers
+                continue
 
             print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
 
@@ -430,7 +431,7 @@ with gr.Blocks() as demo:
         api_key_input = gr.Textbox(label="API Key", type="password")
     
     with gr.Row():
-        keyword_input = gr.Textbox(label="検索キーワード", value="ニンテンドー3DS")
+        keyword_input = gr.Textbox(label="検索キーワード", value="")
         limit_input = gr.Number(label="目標合計取得件数", value=100, precision=0)
     
     with gr.Row():
