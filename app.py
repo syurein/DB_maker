@@ -103,10 +103,11 @@ class SelectorManager:
 
 # --- 高速解析ロジック (BeautifulSoup版) ---
 class FastScraperLogic:
-    def __init__(self, api_key, base_url, model_name):
+    def __init__(self, api_key, base_url, model_name, use_ai_healing=True):
         self.selector_manager = SelectorManager()
         self.client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
         self.model_name = model_name
+        self.use_ai_healing = use_ai_healing
 
     def _clean_html_for_ai(self, html_content):
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -152,6 +153,9 @@ class FastScraperLogic:
                 if items:
                     return items
             
+            if not self.use_ai_healing:
+                break
+
             # AI修復
             print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
             html_snippet = self._clean_html_for_ai(str(soup))
@@ -160,7 +164,6 @@ class FastScraperLogic:
             if new_sel:
                 self.selector_manager.add_prioritized(key, new_sel)
             else:
-                # AIがセレクタを提案できなかった場合は、無駄なループを防ぐために終了
                 break
                 
             retries += 1
@@ -185,6 +188,9 @@ class FastScraperLogic:
                         val = target.get_text(strip=True)
                     if val:
                         return val
+            
+            if not self.use_ai_healing:
+                break
 
             # AI修復
             print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
@@ -226,14 +232,14 @@ def download_image_fast(url, save_path):
     return False
 
 # --- 並列ワーカー (Playwright -> BS4) ---
-def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images):
+def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images, use_ai_healing, headless_mode):
     print(f"🚀 Worker {worker_id}: 開始 (担当ページ: {start_page}, {start_page + num_workers}, ...)")
     
-    logic = FastScraperLogic(api_key, base_url, model)
+    logic = FastScraperLogic(api_key, base_url, model, use_ai_healing)
     results = []
     
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=headless_mode)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         )
@@ -344,7 +350,7 @@ class MercariFastScraper:
         self.base_url = base_url
         self.model_name = model_name
 
-    def run(self, keyword, category_id, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, progress=gr.Progress()):
+    def run(self, keyword, category_id, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress=gr.Progress()):
         status_param = "on_sale%7Csold_out" if status == "すべて" else ("sold_out" if status == "売り切れ" else "on_sale")
         sort_map = {
             "おすすめ順": ("score", "desc"), "新しい順": ("created_time", "desc"),
@@ -355,7 +361,7 @@ class MercariFastScraper:
         safe_kw = "".join([c for c in keyword if c.isalnum()])
         csv_filename = os.path.join(BASE_DIR, f"{safe_kw}_{total_limit}件_爆速版.csv")
         
-        print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}")
+        print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}, AI修復={use_ai_healing}, Headless={headless_mode}")
         
         futures = []
         all_results = []
@@ -382,28 +388,26 @@ class MercariFastScraper:
                         api_key=self.api_key,
                         base_url=self.base_url,
                         model=self.model_name,
-                        download_images=download_images
+                        download_images=download_images,
+                        use_ai_healing=use_ai_healing,
+                        headless_mode=headless_mode
                     )
                 )
             
-            # 完了したワーカーから結果を随時受け取る
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
                     if res:
                         all_results.extend(res)
-                    # 進捗の更新（カウンターの値を見る）
                     progress(min(1.0, shared_counter.value / total_limit), desc=f"取得中... {shared_counter.value}/{total_limit}件")
                 except Exception as e:
                     print(f"A worker failed: {e}")
 
-        # 進捗を100%に
         progress(1, desc=f"完了！ {shared_counter.value}/{total_limit}件")
 
         if all_results:
             df = pd.DataFrame(all_results)
             df = df.drop_duplicates(subset=["URL"], keep='first')
-            # 最終的な件数をtotal_limitに合わせる
             if len(df) > total_limit:
                 df = df.head(total_limit)
             
@@ -413,7 +417,7 @@ class MercariFastScraper:
             return "エラー: データなし", None
 
 # --- UI ---
-def start_scraping(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images):
+def start_scraping(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images, use_ai_healing, headless_mode):
     use_api_key = api_key if api_key else DEFAULT_API_KEY
     workers = int(workers)
     if workers > 4: workers = 4
@@ -421,7 +425,7 @@ def start_scraping(api_key, keyword, category_name, limit, status, price_min, pr
     scraper = MercariFastScraper(use_api_key, DEFAULT_BASE_URL, DEFAULT_MODEL)
     cat_id = CATEGORY_MAP.get(category_name)
     
-    return scraper.run(keyword, cat_id, status, price_min, price_max, sort_order, int(limit), workers, download_images)
+    return scraper.run(keyword, cat_id, status, price_min, price_max, sort_order, int(limit), workers, download_images, use_ai_healing, headless_mode)
 
 with gr.Blocks() as demo:
     gr.Markdown("## メルカリAIスクレイピング (爆速 BS4ハイブリッド版)")
@@ -447,6 +451,10 @@ with gr.Blocks() as demo:
         workers_input = gr.Slider(label="並列ワーカー数", minimum=1, maximum=4, value=2, step=1)
         image_dl_input = gr.Checkbox(label="画像をダウンロードする", value=True)
 
+    with gr.Row():
+        ai_healing_input = gr.Checkbox(label="AI修復を有効にする", value=True)
+        headless_input = gr.Checkbox(label="ヘッドレスモードで実行", value=True)
+
     btn = gr.Button("開始", variant="primary")
     output_log = gr.Textbox(label="ログ")
     output_file = gr.File(label="CSV")
@@ -456,7 +464,7 @@ with gr.Blocks() as demo:
         inputs=[
             api_key_input, keyword_input, category_input, limit_input, 
             status_input, price_min_input, price_max_input, sort_input, 
-            workers_input, image_dl_input
+            workers_input, image_dl_input, ai_healing_input, headless_input
         ], 
         outputs=[output_log, output_file]
     )
