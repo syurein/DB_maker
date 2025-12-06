@@ -140,47 +140,62 @@ class FastScraperLogic:
         Soupから商品コンテナリストを探す (AI修復付き)
         """
         key = "item_container"
-        candidates = self.selector_manager.get_candidates(key)
+        max_retries = 5
+        retries = 0
         
-        # 1. 既存候補チェック
-        for sel in candidates:
-            items = soup.select(sel)
-            if items: return items
-        
-        # 2. AI修復
-        print(f"⚠️ {key} が見つかりません。AI修復を実行します...")
-        html_snippet = self._clean_html_for_ai(str(soup))
-        new_sel = self._ask_ai_for_selector(html_snippet, "Item container element (li or div) in the search result grid", candidates)
-        
-        if new_sel:
-            self.selector_manager.add_prioritized(key, new_sel)
-            return soup.select(new_sel)
-        
+        while retries < max_retries:
+            candidates = self.selector_manager.get_candidates(key)
+            for sel in candidates:
+                items = soup.select(sel)
+                if items:
+                    return items
+            
+            # AI修復
+            print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
+            html_snippet = self._clean_html_for_ai(str(soup))
+            new_sel = self._ask_ai_for_selector(html_snippet, "Item container element (li or div) in the search result grid", candidates)
+            
+            if new_sel:
+                self.selector_manager.add_prioritized(key, new_sel)
+            else:
+                # AIがセレクタを提案できなかった場合は、無駄なループを防ぐために終了
+                break
+                
+            retries += 1
+            
         return []
 
     def extract_text(self, item_soup, key, description):
         """
         商品コンテナ(soup)からテキスト/属性を抽出 (AI修復付き)
         """
-        candidates = self.selector_manager.get_candidates(key)
-        
-        # 1. 既存候補
-        for sel in candidates:
-            target = item_soup.select_one(sel)
-            if target:
-                if key == "title" and target.name == 'img':
-                    val = target.get('alt')
-                else:
-                    val = target.get_text(strip=True)
-                if val: return val
-        
-        # 2. AI修復 (アイテム単体のHTMLで解析)
-        # ※アイテムごとのAI修復はコストが高いので、本当は全体で一度やるのが良いが、
-        #   構造が変わった場合はここで検知して修正する。
-        #   ただし、ループ内で毎回APIを呼ぶのを防ぐため、一度失敗したらそのアイテムは諦めるか、
-        #   または最初の1回だけ学習するロジックにするのが一般的。
-        #   ここでは簡易的に「コンテナが見つかっているなら中身も既存セレクタで見つかるはず」として
-        #   深追いせず、空文字を返す (速度優先)
+        max_retries = 5
+        retries = 0
+
+        while retries < max_retries:
+            candidates = self.selector_manager.get_candidates(key)
+            for sel in candidates:
+                target = item_soup.select_one(sel)
+                if target:
+                    if key == "title" and target.name == 'img':
+                        val = target.get('alt')
+                    else:
+                        val = target.get_text(strip=True)
+                    if val:
+                        return val
+
+            # AI修復
+            print(f"⚠️ {key} が見つかりません。AI修復を実行します... ({retries + 1}/{max_retries})")
+            item_html_snippet = self._clean_html_for_ai(str(item_soup))
+            new_sel = self._ask_ai_for_selector(item_html_snippet, description, candidates)
+
+            if new_sel:
+                self.selector_manager.add_prioritized(key, new_sel)
+            else:
+                break
+            
+            retries += 1
+            
         return ""
     
     def extract_image_url(self, item_soup):
