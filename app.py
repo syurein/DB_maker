@@ -350,7 +350,7 @@ class MercariFastScraper:
         self.base_url = base_url
         self.model_name = model_name
 
-    def run(self, keyword, category_id, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress=gr.Progress()):
+    def run(self, keyword, category_id, category_name, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress=gr.Progress()):
         status_param = "on_sale%7Csold_out" if status == "すべて" else ("sold_out" if status == "売り切れ" else "on_sale")
         sort_map = {
             "おすすめ順": ("score", "desc"), "新しい順": ("created_time", "desc"),
@@ -358,8 +358,27 @@ class MercariFastScraper:
         }
         sort_val, order_val = sort_map.get(sort_order, ("score", "desc"))
 
-        safe_kw = "".join([c for c in keyword if c.isalnum()])
-        csv_filename = os.path.join(BASE_DIR, f"{safe_kw}_{total_limit}件_爆速版.csv")
+        filename_parts = []
+        if keyword:
+            filename_parts.append("".join([c for c in keyword if c.isalnum()]))
+        if category_name:
+            sanitized_cat = category_name.replace(">", "_").replace(" ", "")
+            filename_parts.append(sanitized_cat)
+        if status:
+            filename_parts.append(status)
+        if price_min or price_max:
+            price_part = ""
+            if price_min:
+                price_part += f"min{price_min}"
+            if price_max:
+                price_part += f"max{price_max}"
+            filename_parts.append(price_part)
+        if sort_order:
+            filename_parts.append(sort_order)
+        filename_parts.append(f"{total_limit}件")
+        
+        safe_filename = "_".join(filter(None, filename_parts)) + ".csv"
+        csv_filename = os.path.join(BASE_DIR, safe_filename)
         
         pd.DataFrame(columns=["商品名", "価格", "画像パス", "URL"]).to_csv(csv_filename, index=False, encoding="utf-8-sig")
         
@@ -410,7 +429,6 @@ class MercariFastScraper:
             initial_count = len(df)
             if "URL" in df.columns:
                 df = df.drop_duplicates(subset=["URL"], keep='first')
-            final_count = len(df)
             
             if len(df) > total_limit:
                 df = df.head(total_limit)
@@ -418,8 +436,8 @@ class MercariFastScraper:
 
             df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
             
-            print(f"重複除去: {initial_count} -> {final_count} 件")
-            return f"完了！ 合計{final_count}件取得しました。\nファイル: {csv_filename}", csv_filename
+            print(f"重複除去: {initial_count} -> {len(df)} 件")
+            return f"完了！ 合計{len(df)}件取得しました。\nファイル: {csv_filename}", csv_filename
         except FileNotFoundError:
             return "エラー: データが1件も取得されませんでした。", None
         except Exception as e:
@@ -434,7 +452,7 @@ def start_scraping(api_key, keyword, category_name, limit, status, price_min, pr
     scraper = MercariFastScraper(use_api_key, DEFAULT_BASE_URL, DEFAULT_MODEL)
     cat_id = CATEGORY_MAP.get(category_name)
     
-    return scraper.run(keyword, cat_id, status, price_min, price_max, sort_order, int(limit), workers, download_images, use_ai_healing, headless_mode)
+    return scraper.run(keyword, cat_id, category_name, status, price_min, price_max, sort_order, int(limit), workers, download_images, use_ai_healing, headless_mode)
 
 with gr.Blocks() as demo:
     gr.Markdown("## メルカリAIスクレイピング (爆速 BS4ハイブリッド版)")
