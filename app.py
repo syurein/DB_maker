@@ -226,8 +226,8 @@ def download_image_fast(url, save_path):
     return False
 
 # --- 並列ワーカー (Playwright -> BS4) ---
-def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, api_key, base_url, model, download_images):
-    print(f"🚀 Worker {worker_id}: 開始")
+def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images):
+    print(f"🚀 Worker {worker_id}: 開始 (担当ページ: {start_page}, {start_page + num_workers}, ...)")
     
     logic = FastScraperLogic(api_key, base_url, model)
     results = []
@@ -255,7 +255,7 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
                 time.sleep(0.5)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(3.0) # 画像ロード待ち
+                time.sleep(3.0)
                 
             except Exception as e:
                 print(f"⚠️ Worker {worker_id}: 読み込みタイムアウト/エラー (HTML解析は続行) - {e}")
@@ -264,15 +264,15 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
 
             html = page.content()
             if not html:
-                print(f"❌ Worker {worker_id}: ページコンテンツが空です。スキップします。")
-                current_page_idx += 1
+                print(f"❌ Worker {worker_id}: ページコンテンツが空です。次のページへスキップします。")
+                current_page_idx += num_workers
                 continue
                 
             soup = logic.parse_page(html)
             items = logic.find_items(soup)
             
             if not items:
-                print(f"❌ Worker {worker_id}: 商品なし (終了)")
+                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。このワーカーは終了します。")
                 break
 
             print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
@@ -307,12 +307,12 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             if page_results:
                 new_count = shared_counter.increment(len(page_results))
                 results.extend(page_results)
-                print(f"📦 Worker {worker_id}: {len(page_results)}件追加 (合計: {new_count})")
+                print(f"📦 Worker {worker_id}: {len(page_results)}件追加 (総合計: {new_count})")
 
             if shared_counter.value >= total_limit:
                 break
             
-            current_page_idx += 1
+            current_page_idx += num_workers
             
         browser.close()
     
@@ -362,7 +362,7 @@ class MercariFastScraper:
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             for i in range(num_workers):
-                start_page = i * 5
+                start_page = i
                 futures.append(
                     executor.submit(
                         worker_process, 
@@ -377,6 +377,7 @@ class MercariFastScraper:
                         start_page=start_page,
                         shared_counter=shared_counter,
                         total_limit=total_limit,
+                        num_workers=num_workers,
                         api_key=self.api_key,
                         base_url=self.base_url,
                         model=self.model_name,
@@ -391,7 +392,7 @@ class MercariFastScraper:
                     if res:
                         all_results.extend(res)
                     # 進捗の更新（カウンターの値を見る）
-                    progress(shared_counter.value / total_limit, desc=f"取得中... {shared_counter.value}/{total_limit}件")
+                    progress(min(1.0, shared_counter.value / total_limit), desc=f"取得中... {shared_counter.value}/{total_limit}件")
                 except Exception as e:
                     print(f"A worker failed: {e}")
 
