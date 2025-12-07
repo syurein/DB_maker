@@ -1,20 +1,27 @@
 import os
 import json
 import re
+import io
+from flask import Flask, request, jsonify
 from google import genai
 from google.genai import types
 from PIL import Image
-import io
 from dotenv import load_dotenv
 
-load_dotenv('../.env')
+# .envの読み込み
+load_dotenv()
 
-# 新しいクライアントの初期化
+# --- Config ---
+app = Flask(__name__)
+# 日本語文字化け対策
+app.json.ensure_ascii = False 
+
+# Google GenAI Client Setup
 client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# --- Helper: JSON抽出 ---
+# --- Helper Logic (The Brain) ---
 def extract_json(text: str):
-    """JSONを抽出・パースする。戻り値は dict または list"""
+    """JSON抽出ヘルパー"""
     match = re.search(r"```json\s*(.*?)```", text, re.DOTALL)
     json_str = match.group(1) if match else text
     json_str = json_str.strip()
@@ -31,20 +38,16 @@ class VisionAppraiser:
         try:
             image = Image.open(io.BytesIO(image_data))
             
-            # ---------------------------------------------------------
-            # Phase 1: Detective (画像分析)
-            # ---------------------------------------------------------
+            # Phase 1: Detective
             print(f"Phase 1: Detective Work ({self.model_name})...")
-            
             detective_prompt = """
             この商品を特定するための情報を抽出してください。
-            出力は以下のキーを持つ単一のJSONオブジェクトにしてください（リストにしないでください）。
+            出力は以下のキーを持つ単一のJSONオブジェクトにしてください（リスト禁止）。
             
             1. visual_cues: 検索キーワードとなる特徴（型番、ロゴ、製品名）のみを抽出。
             2. tentative_name: 推測される商品名。
             3. condition_rank: S/A/B/C/J判定。
             """
-
             response1 = client.models.generate_content(
                 model=self.model_name,
                 contents=[detective_prompt, image],
@@ -55,14 +58,8 @@ class VisionAppraiser:
             )
             
             d_result = extract_json(response1.text)
-            
-            # ★★★【修正ポイント】リストで返ってきた場合のガード処理 ★★★
             if isinstance(d_result, list):
-                if len(d_result) > 0:
-                    d_result = d_result[0] # リストの先頭要素を取り出す
-                else:
-                    d_result = {} # 空リストなら空辞書にする
-            # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+                d_result = d_result[0] if d_result else {}
 
             if "raw_content" in d_result:
                 cues = str(d_result["raw_content"])[:500]
@@ -73,25 +70,14 @@ class VisionAppraiser:
                 tentative = d_result.get("tentative_name", "Unknown")
                 rank = d_result.get("condition_rank", "B")
 
-            print(f"  -> Guess: {tentative}")
-
-            # ---------------------------------------------------------
-            # Phase 2: Appraiser (検索 & 査定)
-            # ---------------------------------------------------------
-            print("Phase 2: Market Research (Google Search)...")
-            
+            # Phase 2: Appraiser
+            print(f"Phase 2: Market Research (Google Search) for {tentative}...")
             appraiser_prompt = f"""
             以下の商品の正式名称を特定し、中古相場を査定してください。
-
-            【鑑識情報】
-            - 特徴: {cues}
-            - 仮名: {tentative}
-            - 状態: {rank}
-
+            【鑑識情報】特徴: {cues}, 仮名: {tentative}, 状態: {rank}
             【指示】
             1. Google検索で正式名称を特定。
             2. その状態での中古買取相場(C)を調査。
-            
             【出力フォーマット】
             ```json
             {{
@@ -101,7 +87,6 @@ class VisionAppraiser:
             }}
             ```
             """
-
             response2 = client.models.generate_content(
                 model=self.model_name,
                 contents=appraiser_prompt,
@@ -112,44 +97,60 @@ class VisionAppraiser:
             )
 
             a_result = extract_json(response2.text)
-            
-            # Phase 2 も念のためリスト対策を入れておきます
             if isinstance(a_result, list):
-                a_result = a_result[0] if len(a_result) > 0 else {}
+                a_result = a_result[0] if a_result else {}
 
             price = 0
             if "ai_price_c" in a_result:
                 try: price = int(a_result["ai_price_c"])
                 except: pass
 
-            final_result = {
+            return {
                 "official_name": a_result.get("final_official_name", tentative),
                 "condition_rank": rank,
                 "ai_price_c": price,
                 "trend_note": a_result.get("trend_note", ""),
                 "visual_cues": cues
             }
-            return final_result
 
         except Exception as e:
-            print(f"Pipeline Error: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "official_name": "System Error",
-                "ai_price_c": 0,
-                "trend_note": str(e),
-                "condition_rank": "Unknown"
-            }
+            print(f"Error: {e}")
+            return {"error": str(e)}
 
-if __name__ == "__main__":
-    image_path = r"C:\Users\hikar\Downloads\DBscrayper\MercariScraper\downloaded_images\0_0_0_1765035531.jpg"
+# インスタンス生成（サーバー起動時に1回だけ実行）
+appraiser = VisionAppraiser()
+
+# --- API Routes ---
+
+@app.route('/')
+def home():
+    return "AI Appraisal API is Running!"
+
+@app.route('/analyze', methods=['POST'])
+def analyze_endpoint():
+    """
+    POST /analyze
+    Form-Data:
+      image: (file binary)
+    """
+    if 'image' not in request.files:
+        return jsonify({"error": "No image part"}), 400
     
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as f:
-             img_bytes = f.read()
-        
-        appraiser = VisionAppraiser()
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    try:
+        # 画像バイナリを読み込んでAIに渡す
+        img_bytes = file.read()
         result = appraiser.analyze_image(img_bytes)
-        print("\n--- Final Appraisal Result ---")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        
+        # 結果をJSONで返す
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    # 開発用サーバー起動 (ポート5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
