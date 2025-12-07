@@ -18,6 +18,8 @@ from urllib.parse import quote
 import concurrent.futures
 import math
 import threading
+import uuid
+from datetime import datetime
 
 # 1. Google Driveマウント (Colab用)
 if os.path.exists('/content/drive'):
@@ -66,7 +68,6 @@ class SelectorManager:
         self.selectors = self._load()
         updated = False
         if "item_container" not in self.selectors:
-            # bs4用セレクタ
             self.selectors["item_container"] = ["li[data-testid='item-cell']", "div[data-testid='item-cell']", ".ItemCell__Item-sc-1"]
             updated = True
         if "title" not in self.selectors:
@@ -208,7 +209,7 @@ class FastScraperLogic:
             if href: return f"https://jp.mercari.com{href}"
         return ""
 
-# --- 画像ダウンロード関数 (requests使用) ---
+# --- 画像ダウンロード関数 ---
 def download_image_fast(url, save_path):
     try:
         r = requests.get(url, timeout=5)
@@ -219,7 +220,7 @@ def download_image_fast(url, save_path):
     return False
 
 # --- 並列ワーカー (Playwright -> BS4) ---
-def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images, use_ai_healing, headless_mode, csv_filename):
+def worker_process(worker_id, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, start_page, shared_counter, total_limit, num_workers, api_key, base_url, model, download_images, use_ai_healing, headless_mode, csv_filename,sleep_time=30):
     print(f"🚀 Worker {worker_id}: 開始 (担当ページ: {start_page}, {start_page + num_workers}, ...)")
     
     logic = FastScraperLogic(api_key, base_url, model, use_ai_healing)
@@ -242,49 +243,41 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             if price_min: url += f"&price_min={price_min}"
             if price_max: url += f"&price_max={price_max}"
 
-            print(f"🌍 Worker {worker_id}: Accessing Page {current_page_idx}...")
+            # print(f"🌍 Worker {worker_id}: Accessing Page {current_page_idx}...")
             
             try:
                 page.goto(url, timeout=TIMEOUT_MS, wait_until="domcontentloaded")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-                time.sleep(50)
+                time.sleep(sleep_time) # 少し短縮
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(50)
+                time.sleep(sleep_time) # 少し短縮
                 
             except Exception as e:
-                print(f"⚠️ Worker {worker_id}: 読み込みタイムアウト/エラー (HTML解析は続行) - {e}")
+                print(f"⚠️ Worker {worker_id}: 読み込みエラー (HTML解析は続行) - {e}")
                 try: page.evaluate("window.stop()")
                 except: pass
 
             html = page.content()
             if not html:
-                print(f"❌ Worker {worker_id}: ページコンテンツが空です。スキップします。({skip_counter + 1}/{max_skips})")
                 current_page_idx += num_workers
                 skip_counter += 1
-                if skip_counter >= max_skips:
-                    print(f"🚫 Worker {worker_id}: スキップが{max_skips}回に達したため、このワーカーは終了します。")
-                    break
+                if skip_counter >= max_skips: break
                 continue
                 
             soup = logic.parse_page(html)
             items = logic.find_items(soup)
             
             if not items:
-                print(f"❌ Worker {worker_id} on page {current_page_idx}: 商品が見つかりませんでした。スキップします。({skip_counter + 1}/{max_skips})")
                 current_page_idx += num_workers
                 skip_counter += 1
-                if skip_counter >= max_skips:
-                    print(f"🚫 Worker {worker_id}: スキップが{max_skips}回に達したため、このワーカーは終了します。")
-                    break
+                if skip_counter >= max_skips: break
                 continue
 
             skip_counter = 0
-            print(f"⚡ Worker {worker_id}: BS4で {len(items)} 件を解析中...")
-
+            
             page_results_to_write = []
             for item in items:
-                if shared_counter.value >= total_limit:
-                    break
+                if shared_counter.value >= total_limit: break
                 
                 try:
                     title = logic.extract_text(item, "title", "商品名")
@@ -314,8 +307,8 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             
             if page_results_to_write:
                 pd.DataFrame(page_results_to_write).to_csv(csv_filename, mode='a', header=False, index=False, encoding="utf-8-sig")
-                new_count = shared_counter.increment(len(page_results_to_write))
-                print(f"📦 Worker {worker_id}: {len(page_results_to_write)}件追加 (総合計: {new_count})")
+                shared_counter.increment(len(page_results_to_write))
+                # print(f"📦 Worker {worker_id}: {len(page_results_to_write)}件追加")
 
             if shared_counter.value >= total_limit:
                 break
@@ -323,8 +316,6 @@ def worker_process(worker_id, keyword, category_id, status_param, price_min, pri
             current_page_idx += num_workers
             
         browser.close()
-    
-    print(f"✅ Worker {worker_id}: 完了")
     return
 
 # --- 共有カウンター ---
@@ -343,14 +334,14 @@ class SharedCounter:
         with self._lock:
             return self._value
 
-# --- メインクラス ---
+# --- スクレイパークラス (コールバック対応版) ---
 class MercariFastScraper:
     def __init__(self, api_key, base_url, model_name):
         self.api_key = api_key
         self.base_url = base_url
         self.model_name = model_name
 
-    def run(self, keyword, category_id, category_name, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress=gr.Progress()):
+    def run(self, keyword, category_id, category_name, status, price_min, price_max, sort_order, total_limit, num_workers, download_images, use_ai_healing, headless_mode, progress_callback=None,sleep_time=30):
         status_param = "on_sale%7Csold_out" if status == "すべて" else ("sold_out" if status == "売り切れ" else "on_sale")
         sort_map = {
             "おすすめ順": ("score", "desc"), "新しい順": ("created_time", "desc"),
@@ -358,23 +349,19 @@ class MercariFastScraper:
         }
         sort_val, order_val = sort_map.get(sort_order, ("score", "desc"))
 
+        # ファイル名生成
         filename_parts = []
-        if keyword:
-            filename_parts.append("".join([c for c in keyword if c.isalnum()]))
+        if keyword: filename_parts.append("".join([c for c in keyword if c.isalnum()]))
         if category_name:
             sanitized_cat = category_name.replace(">", "_").replace(" ", "").replace("/", "_")
             filename_parts.append(sanitized_cat)
-        if status:
-            filename_parts.append(status)
+        if status: filename_parts.append(status)
         if price_min or price_max:
             price_part = ""
-            if price_min:
-                price_part += f"min{price_min}"
-            if price_max:
-                price_part += f"max{price_max}"
+            if price_min: price_part += f"min{price_min}"
+            if price_max: price_part += f"max{price_max}"
             filename_parts.append(price_part)
-        if sort_order:
-            filename_parts.append(sort_order)
+        if sort_order: filename_parts.append(sort_order)
         filename_parts.append(f"{total_limit}件")
         
         safe_filename = "_".join(filter(None, filename_parts)) + ".csv"
@@ -382,88 +369,174 @@ class MercariFastScraper:
         
         pd.DataFrame(columns=["商品名", "価格", "画像パス", "URL"]).to_csv(csv_filename, index=False, encoding="utf-8-sig")
         
-        print(f"🔥 爆速スクレイピング開始: {num_workers} workers, BS4解析, 画像DL={download_images}, AI修復={use_ai_healing}, Headless={headless_mode}")
+        print(f"🔥 スクレイピング開始: {keyword} / {category_name}")
         
         futures = []
         shared_counter = SharedCounter()
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             for i in range(num_workers):
-                start_page = i
-                futures.append(
-                    executor.submit(
-                        worker_process, 
-                        worker_id=i,
-                        keyword=keyword,
-                        category_id=category_id,
-                        status_param=status_param,
-                        price_min=price_min,
-                        price_max=price_max,
-                        sort_val=sort_val,
-                        order_val=order_val,
-                        start_page=start_page,
-                        shared_counter=shared_counter,
-                        total_limit=total_limit,
-                        num_workers=num_workers,
-                        api_key=self.api_key,
-                        base_url=self.base_url,
-                        model=self.model_name,
-                        download_images=download_images,
-                        use_ai_healing=use_ai_healing,
-                        headless_mode=headless_mode,
-                        csv_filename=csv_filename
-                    )
-                )
+                futures.append(executor.submit(
+                    worker_process, i, keyword, category_id, status_param, price_min, price_max, sort_val, order_val, 
+                    i, shared_counter, total_limit, num_workers, self.api_key, self.base_url, self.model_name, 
+                    download_images, use_ai_healing, headless_mode, csv_filename, sleep_time
+                ))
             
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                    progress(min(1.0, shared_counter.value / total_limit), desc=f"取得中... {shared_counter.value}/{total_limit}件")
-                except Exception as e:
-                    print(f"A worker failed: {e}")
+            # 監視ループ
+            while any(f.running() for f in futures):
+                if progress_callback:
+                    progress_callback(shared_counter.value, total_limit)
+                time.sleep(1)
+            
+            # 完了待機
+            for future in futures:
+                try: future.result()
+                except: pass
 
-        progress(1, desc=f"完了！ {shared_counter.value}/{total_limit}件")
+        if progress_callback:
+            progress_callback(shared_counter.value, total_limit)
 
         try:
             df = pd.read_csv(csv_filename)
-            initial_count = len(df)
-            if "URL" in df.columns:
-                df = df.drop_duplicates(subset=["URL"], keep='first')
-            
-            if len(df) > total_limit:
-                df = df.head(total_limit)
-                final_count = len(df)
-
+            df = df.drop_duplicates(subset=["URL"], keep='first')
+            if len(df) > total_limit: df = df.head(total_limit)
             df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
+            return len(df), csv_filename
+        except:
+            return 0, csv_filename
+
+# --- ジョブキュー管理システム ---
+class JobQueueManager:
+    def __init__(self):
+        self.queue = [] # List of dicts
+        self.lock = threading.Lock()
+        self.is_running = True
+        self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.worker_thread.start()
+
+    def add_job(self, params):
+        with self.lock:
+            job_id = str(uuid.uuid4())[:8]
+            job = {
+                "id": job_id,
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "keyword": params.get("keyword", "-"),
+                "category": params.get("category_name", "-"),
+                "status": "待機中",
+                "progress": "0/0",
+                "result_file": "",
+                "params": params
+            }
+            self.queue.append(job)
+        return job_id
+
+    def update_job(self, job_id, key, value):
+        with self.lock:
+            for job in self.queue:
+                if job["id"] == job_id:
+                    job[key] = value
+                    break
+
+    def get_status_df(self):
+        with self.lock:
+            if not self.queue:
+                return pd.DataFrame(columns=["ID", "登録時刻", "KW", "カテゴリ", "状態", "進捗", "ファイル"])
             
-            print(f"重複除去: {initial_count} -> {len(df)} 件")
-            return f"完了！ 合計{len(df)}件取得しました。\nファイル: {csv_filename}", csv_filename
-        except FileNotFoundError:
-            return "エラー: データが1件も取得されませんでした。", None
+            data = []
+            for job in self.queue:
+                data.append([
+                    job["id"], job["timestamp"], job["keyword"], job["category"], 
+                    job["status"], job["progress"], job["result_file"]
+                ])
+            return pd.DataFrame(data, columns=["ID", "登録時刻", "KW", "カテゴリ", "状態", "進捗", "ファイル"])
+
+    def _process_queue(self):
+        while self.is_running:
+            job_to_run = None
+            with self.lock:
+                for job in self.queue:
+                    if job["status"] == "待機中":
+                        job_to_run = job
+                        job["status"] = "実行中"
+                        break
+            
+            if job_to_run:
+                self._execute_job(job_to_run)
+            else:
+                time.sleep(1)
+
+    def _execute_job(self, job):
+        try:
+            p = job["params"]
+            
+            def progress_callback(current, total):
+                self.update_job(job["id"], "progress", f"{current}/{total}")
+            
+            api_key = p.get("api_key") or DEFAULT_API_KEY
+            scraper = MercariFastScraper(api_key, DEFAULT_BASE_URL, DEFAULT_MODEL)
+            cat_id = CATEGORY_MAP.get(p.get("category_name"))
+            
+            count, file_path = scraper.run(
+                keyword=p["keyword"],
+                category_id=cat_id,
+                category_name=p["category_name"],
+                status=p["status"],
+                price_min=p["price_min"],
+                price_max=p["price_max"],
+                sort_order=p["sort_order"],
+                total_limit=int(p["limit"]),
+                num_workers=int(p["workers"]),
+                download_images=p["download_images"],
+                use_ai_healing=p["use_ai_healing"],
+                headless_mode=p["headless_mode"],
+                progress_callback=progress_callback,
+                sleep_time=p["sleep_time"]
+            )
+            
+            with self.lock:
+                job["status"] = "完了"
+                job["result_file"] = os.path.basename(file_path) if file_path else "Error"
+                
         except Exception as e:
-            return f"エラー: CSV処理中に問題が発生しました - {e}", None
+            print(f"Job Error: {e}")
+            with self.lock:
+                job["status"] = "エラー"
+                job["progress"] = str(e)
 
-# --- UI ---
-def start_scraping(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images, use_ai_healing, headless_mode):
-    use_api_key = api_key if api_key else DEFAULT_API_KEY
-    workers = int(workers)
-    if workers > 4: workers = 4
-    
-    scraper = MercariFastScraper(use_api_key, DEFAULT_BASE_URL, DEFAULT_MODEL)
-    cat_id = CATEGORY_MAP.get(category_name)
-    
-    return scraper.run(keyword, cat_id, category_name, status, price_min, price_max, sort_order, int(limit), workers, download_images, use_ai_healing, headless_mode)
+# グローバルキューインスタンス
+job_manager = JobQueueManager()
 
-with gr.Blocks() as demo:
-    gr.Markdown("## メルカリAIスクレイピング (爆速 BS4ハイブリッド版)")
-    gr.Markdown("Playwrightでロードし、BeautifulSoupで瞬時に解析します。")
+# --- UIイベントハンドラ ---
+def add_to_queue(api_key, keyword, category_name, limit, status, price_min, price_max, sort_order, workers, download_images, use_ai_healing, headless_mode,sleep_time=30):
+    if not keyword and not category_name:
+        return job_manager.get_status_df(), "エラー: キーワードかカテゴリを指定してください。"
+        
+    params = {
+        "api_key": api_key, "keyword": keyword, "category_name": category_name,
+        "limit": limit, "status": status, "price_min": price_min,
+        "price_max": price_max, "sort_order": sort_order, "workers": workers,
+        "download_images": download_images, "use_ai_healing": use_ai_healing,
+        "headless_mode": headless_mode,
+        "sleep_time": sleep_time
+    }
+    
+    job_id = job_manager.add_job(params)
+    return job_manager.get_status_df(), f"キューに追加しました (ID: {job_id})"
+
+def refresh_table():
+    return job_manager.get_status_df()
+
+# --- UI構築 ---
+with gr.Blocks(title="メルカリScraper Queue") as demo:
+    gr.Markdown("## メルカリAIスクレイピング (予約実行・キュー機能付き)")
+    gr.Markdown("条件を設定して「キューに追加」を押すと、バックグラウンドで順番に処理されます。")
     
     with gr.Accordion("API設定", open=False):
         api_key_input = gr.Textbox(label="API Key", type="password")
     
     with gr.Row():
-        keyword_input = gr.Textbox(label="検索キーワード", value="")
-        limit_input = gr.Number(label="目標合計取得件数", value=100, precision=0)
+        keyword_input = gr.Textbox(label="検索キーワード", placeholder="例: iPhone 12")
+        limit_input = gr.Number(label="目標合計取得件数", value=50, precision=0)
     
     with gr.Row():
         category_input = gr.Dropdown(label="カテゴリ", choices=CATEGORY_CHOICES)
@@ -477,23 +550,36 @@ with gr.Blocks() as demo:
     with gr.Row():
         workers_input = gr.Slider(label="並列ワーカー数", minimum=1, maximum=4, value=2, step=1)
         image_dl_input = gr.Checkbox(label="画像をダウンロードする", value=True)
-
-    with gr.Row():
         ai_healing_input = gr.Checkbox(label="AI修復を有効にする", value=True)
-        headless_input = gr.Checkbox(label="ヘッドレスモードで実行", value=True)
+        headless_input = gr.Checkbox(label="ヘッドレスモード", value=True)
+        sleep_time = gr.Slider(label="ページ読み込み後の待機時間 (秒)", value=100, minimum=0, step=1,value=30)
 
-    btn = gr.Button("開始", variant="primary")
-    output_log = gr.Textbox(label="ログ")
-    output_file = gr.File(label="CSV")
-
-    btn.click(
-        start_scraping, 
+    add_btn = gr.Button("キューに追加 (予約)", variant="primary")
+    message_box = gr.Markdown("")
+    
+    gr.Markdown("---")
+    gr.Markdown("### 実行キュー / ステータス")
+    
+    # データフレーム表示（インタラクティブな更新のため）
+    status_table = gr.Dataframe(
+        headers=["ID", "登録時刻", "KW", "カテゴリ", "状態", "進捗", "ファイル"],
+        datatype=["str", "str", "str", "str", "str", "str", "str"],
+        interactive=False
+    )
+    
+    # 自動更新タイマー (2秒ごとに更新)
+    timer = gr.Timer(2)
+    timer.tick(refresh_table, outputs=status_table)
+    
+    add_btn.click(
+        add_to_queue,
         inputs=[
             api_key_input, keyword_input, category_input, limit_input, 
             status_input, price_min_input, price_max_input, sort_input, 
-            workers_input, image_dl_input, ai_healing_input, headless_input
-        ], 
-        outputs=[output_log, output_file]
+            workers_input, image_dl_input, ai_healing_input, headless_input,sleep_time
+        ],
+        outputs=[status_table, message_box]
     )
 
-demo.queue().launch(share=True, debug=True)
+if __name__ == "__main__":
+    demo.queue().launch(share=True, debug=True)

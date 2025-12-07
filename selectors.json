@@ -5,12 +5,14 @@
   ],
   "title": [
     "[data-testid='product-name']",
+    "[class*='merSkeleton']:not([data-testid='product-name']):not([data-testid='thumbnail-image'])",
     "img[alt]",
     "[data-testid='thumbnail-image']"
   ],
   "price": [
+    "[data-testid='price']",
+    "[class*='merSkeleton']:not([class*='pulse']):not([class*='text']):not([class*='small']):not([class*='middle']):not([class*='fluid']):not([class*='rectangle'])",
     "[class*='price']",
-    ".number__6b270ca7",
-    "[data-testid='price']"
+    ".number__6b270ca7"
   ]
 }

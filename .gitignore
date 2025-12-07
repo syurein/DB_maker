@@ -3,6 +3,7 @@
 
 # Ignore the downloaded_images directory
 downloaded_images/
-
+MercariScraper/
 # Ignore environment variables
-.env
+*.env
+*.csv
