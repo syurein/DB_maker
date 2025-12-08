@@ -130,7 +130,7 @@ class VisionAppraiser:
 
 # --- 2. Market Data Manager (DB Adapter) ---
 class MarketDataManager:
-    def __init__(self, csv_path: str = "../MercariScraper/merged_data_total_6542.csv", mode: str = "csv"):
+    def __init__(self, csv_path: str = "./merged_data_total_6542.csv", mode: str = "csv"):
         self.csv_path = csv_path
         self.mode = mode
         self.df = None
