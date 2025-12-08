@@ -318,6 +318,8 @@ def appraisal_interface(image):
         output_md += "\n*データなし (条件に合う商品が見つかりませんでした)*\n"
     return output_md
 
+# ... (前のコードはそのまま)
+
 if __name__ == "__main__":
     with gr.Blocks(title="Dragon Eye") as demo:
         gr.Markdown("# 🐉 Dragon Eye")
@@ -326,4 +328,8 @@ if __name__ == "__main__":
             btn = gr.Button("査定", variant="primary")
         output_area = gr.Markdown()
         btn.click(fn=appraisal_interface, inputs=input_img, outputs=output_area)
-    demo.launch()
+    
+    # Render用にポート設定を変更
+    # 環境変数PORTがあればそれを使い、なければ7860を使う
+    port = int(os.environ.get("PORT", 7860))
+    demo.launch(server_name="0.0.0.0", server_port=port)

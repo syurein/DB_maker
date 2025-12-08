@@ -7,3 +7,11 @@ playwright
 gradio
 Flask
 scipy
+flask
+Pillow
+pandas
+numpy
+scipy
+python-dotenv
+gradio
+google-genai
