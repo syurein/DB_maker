@@ -130,7 +130,7 @@ class VisionAppraiser:
 
 # --- 2. Market Data Manager (DB Adapter) ---
 class MarketDataManager:
-    def __init__(self, csv_path: str = "./merged_data_total_90640.csv", mode: str = "csv"):
+    def __init__(self, csv_path: str = "../merged_data_total_6542.csv", mode: str = "csv"):
         self.csv_path = csv_path
         self.mode = mode
         self.df = None
@@ -140,8 +140,8 @@ class MarketDataManager:
         if os.path.exists(self.csv_path):
             try:
                 self.df = pd.read_csv(self.csv_path)
-                rename_map = {"商品名": "product_name", "価格": "price", "画像パス": "image_url", "URL": "item_url"}
-                self.df = self.df.rename(columns=rename_map)
+                #rename_map = {"商品名": "product_name", "価格": "price", "画像パス": "image_url", "URL": "item_url"}
+                #self.df = self.df.rename(columns=rename_map)
                 
                 if self.df['price'].dtype == object:
                     self.df['price'] = self.df['price'].astype(str).str.replace(',', '')
@@ -332,4 +332,4 @@ if __name__ == "__main__":
     # Render用にポート設定を変更
     # 環境変数PORTがあればそれを使い、なければ7860を使う
     port = int(os.environ.get("PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=port)
+    demo.launch( server_port=port)
