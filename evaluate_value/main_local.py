@@ -50,37 +50,42 @@ class VisionAppraiser:
         try:
             # Phase 1: Detective (ここを修正: 正規表現リストを作成させる)
             detective_prompt = """
-            この商品を特定し、Pythonの `re` モジュールで検索するための「正規表現リスト」を作成してください。
-            検索漏れを防ぐため、表記ゆれや類義語を `|` (OR) で含めてください。
-            
-            【作成ルール】
-            検索クエリのリスト (`search_queries`) を作成してください。
-            
-            1. **アニメ・キャラ名がある場合**
-               - 「(作品名略称|正式名).*(商品種別|類義語)」のパターン
-               - 「(キャラ名).*(商品種別|類義語)」のパターン
-               - 例: リゼロのレムのキーホルダーの場合
-                 `["(Re:?ゼロ|リゼロ).*(キーホルダー|ストラップ|アクキー)", "(レム|ラム).*(キーホルダー|ストラップ|アクキー)"]`
-            
-            2. **型番がある場合**
-               - 型番の表記ゆれを吸収するパターン
-               - 例: WF-1000XM4の場合
-                 `["WF.?1000XM4", "ソニー.*イヤホン.*ノイズキャンセリング"]`
+                この商品を特定し、Pythonの `re` モジュールで検索するための「正規表現リスト」を作成してください。
+                
+                【最重要ルール：検索漏れの完全防止】
+                現状の厳密な一致よりも、「取りこぼしゼロ」を優先します。
+                複数の要素を `.*` (AND) で繋ぐと、語順の違いや表記不足でヒットしないため、
+                **特定性が高いキーワード単体でヒットするように `|` (OR) を積極的に使用してください。**
 
-            3. **その他**
-               - メーカー名と広い商品カテゴリ
-               - 例: `["(Sony|ソニー).*(イヤホン|ヘッドホン)"]`
+                【作成ルール】
+                検索クエリのリスト (`search_queries`) を作成してください。
+                
+                1. **アニメ・キャラ名がある場合**
+                - 商品種別（キーホルダー等）を必須にせず、作品名やキャラ名だけで検索するパターンを含める。
+                - 略称・正式名称・キャラ名をすべて `|` で繋ぐ。
+                - 例: リゼロのレムのキーホルダーの場合
+                    （「リゼロ」または「レム」が含まれていればヒットさせる広めの設定）
+                    `["(Re:?ゼロ|リゼロ|Re:Zero|レム|Rem|ラム|Ram)"]`
+                    ※もし範囲が広すぎる場合は、`(Re:?ゼロ|リゼロ).*(キーホルダー|雑貨)|(レム|ラム).*(キーホルダー|雑貨)` のようにORで並列させる。
+                
+                2. **型番・固有名詞がある場合**
+                - 型番の一部違いや、メーカー名の有無を考慮し、型番の数字部分などをORで網羅する。
+                - 例: WF-1000XM4の場合
+                    `["(WF-?1000XM4|1000XM4|ソニー.*ノイズキャンセリング|Sony.*Earphone)"]`
 
-            【出力フォーマット(JSON)】
-            {
-                "visual_cues": "特徴",
-                "tentative_name": "商品名",
-                "search_queries": ["正規表現パターン1", "正規表現パターン2"],
-                "condition_rank": "B",
-                "condition_note": "状態メモ"
-            }
-            """
-            
+                3. **表記ゆれ・類義語の徹底**
+                - 英語表記、カタカナ表記、ひらがな表記を必ず `|` で含める。
+                - 例: `["(Sony|ソニー|そにー)"]`
+
+                【出力フォーマット(JSON)】
+                {
+                    "visual_cues": "視覚的特徴（色、形、文字）",
+                    "tentative_name": "推定される商品名",
+                    "search_queries": ["正規表現パターン1（広め）", "正規表現パターン2（別軸）"],
+                    "condition_rank": "B",
+                    "condition_note": "状態メモ"
+                }
+            """            
             response1 = client.models.generate_content(
                 model=self.model_name,
                 contents=[detective_prompt, image],
@@ -140,8 +145,8 @@ class MarketDataManager:
         if os.path.exists(self.csv_path):
             try:
                 self.df = pd.read_csv(self.csv_path)
-                #rename_map = {"商品名": "product_name", "価格": "price", "画像パス": "image_url", "URL": "item_url"}
-                #self.df = self.df.rename(columns=rename_map)
+                rename_map = {"商品名": "product_name", "価格": "price", "画像パス": "image_url", "URL": "item_url"}
+                self.df = self.df.rename(columns=rename_map)
                 
                 if self.df['price'].dtype == object:
                     self.df['price'] = self.df['price'].astype(str).str.replace(',', '')
