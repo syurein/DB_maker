@@ -3,7 +3,7 @@ import os
 
 # APIのベースURL（環境に合わせて変更してください）
 # ローカルで動かしている場合は http://localhost:8000 など
-API_BASE_URL = "https://46e192aa6b9f.ngrok-free.app"
+API_BASE_URL = "https://shinssss-db.hf.space"
 ENDPOINT = "/upload-zip"
 
 def upload_zip_for_seeding(zip_file_path):
@@ -41,10 +41,10 @@ def upload_zip_for_seeding(zip_file_path):
             print("内容:", response.text)
 
     except requests.exceptions.RequestException as e:
-        print(f"通信エラー: {e}")
+        print(f"通信エラー: {e.status}")
 
 if __name__ == "__main__":
     # アップロードしたいZIPファイルのパスを指定
-    target_zip = r"C:\Users\hikar\Downloads\DBscrayper\MercariScraper\all_meraged.zip" 
+    target_zip = r"C:\Users\hikar\Downloads\DBscrayper\test1.zip" 
     
     upload_zip_for_seeding(target_zip)
