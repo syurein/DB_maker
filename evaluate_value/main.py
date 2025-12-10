@@ -95,7 +95,7 @@ class VisionAppraiser:
 
 # --- 2. Market Data Manager (CSV Adapter) ---
 class MarketDataManager:
-    def __init__(self, csv_path: str = "../merged_data_total_6542.csv"):
+    def __init__(self, csv_path: str = "../output.csv"):
         self.csv_path = csv_path
         self.df = None
         self.load_csv_data()
@@ -146,6 +146,89 @@ class MarketDataManager:
         except Exception as e:
             print(f"CSV Search Error: {e}")
             return []
+
+
+import requests
+from typing import List, Dict, Any
+
+class MarketDataManager_api:
+    def __init__(self, api_base_url: str = "https://shinssss-db.hf.space"):
+        """
+        Args:
+            api_base_url (str): APIのベースURL (/docsの前まで)
+        """
+        # 末尾のスラッシュを除去して正規化
+        self.api_base_url = api_base_url.rstrip("/")
+        # セッションを作成してコネクションを再利用（高速化）
+        self.session = requests.Session()
+
+    def fetch_market_data(self, search_keywords: List[str]) -> List[Dict[str, Any]]:
+        """
+        API経由で商品を検索し、標準フォーマットのリストを返す。
+        
+        Args:
+            search_keywords (list): 検索したいキーワード（または商品名）のリスト
+        """
+        all_records = []
+        
+        # 【重要】Swagger UI (/docs) を見て、正しいエンドポイントパスに書き換えてください。
+        # 例: "/items/", "/products/search", "/api/v1/goods" など
+        # ここでは一般的な "/items/" と仮定しています。
+        endpoint = f"{self.api_base_url}/items/"
+
+        for keyword in search_keywords:
+            try:
+                # APIの仕様に合わせてパラメータキーを変更してください
+                # (例: "q": keyword, "name_contains": keyword, "product_name": keyword)
+                params = {
+                    "product_name": str(keyword), # 検索クエリ
+                    "limit": 50                   # 1回あたりの取得件数制限
+                }
+                
+                # APIリクエスト送信
+                response = self.session.get(endpoint, params=params, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # レスポンスがリストか、{"items": [...]} 形式かで処理を分岐
+                    items = data if isinstance(data, list) else data.get("items", [])
+                    
+                    for item in items:
+                        # DBのカラム名がCSVと異なる可能性があるため、マッピングを行う
+                        # .get("APIのキー名", デフォルト値)
+                        record = {
+                            "product_name": item.get("product_name", item.get("name", "Unknown")),
+                            "price": self._parse_price(item.get("price", 0)),
+                            "item_url": item.get("item_url", item.get("url", "")),
+                            # 必要であれば画像URLなどもここで取得
+                            "image_url": item.get("image_url", ""),
+                            "source": "DB_API"
+                        }
+                        
+                        # 重複排除が必要ならここでチェック（今回はリストに追加するのみ）
+                        all_records.append(record)
+                        
+                else:
+                    print(f"API Search Failed for '{keyword}': Status {response.status_code}")
+            
+            except Exception as e:
+                print(f"API Request Error for '{keyword}': {e}")
+                continue
+
+        return all_records
+
+    def _parse_price(self, price_value) -> int:
+        """価格データを安全に整数化するヘルパーメソッド"""
+        try:
+            if isinstance(price_value, int):
+                return price_value
+            if isinstance(price_value, str):
+                return int(float(price_value.replace(',', '')))
+            return 0
+        except:
+            return 0
+
 
 # --- 3. Rakuten Market Manager (New Integration) ---
 class RakutenMarketManager:
@@ -248,7 +331,7 @@ class AI_Filter_Estimator:
         カバーやケースなどの付属品のみの商品は除外してください。
         同じ商品名でも、型番やバリエーションが異なる場合は除外してください
         価格があまりにもおかしい場合ははじいてください。
-        
+        元の数の1/6にしないでください。
         【出力(JSON)】
         {{
             "valid_indices": [0, 1, 3] 
@@ -336,7 +419,7 @@ class AI_Filter_Estimator:
                 model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
+                    #response_mime_type="application/json",
                     tools=[search_tool] # ここで検索ツールを有効化
                 )
             )
