@@ -137,4 +137,5 @@ def appraise():
 
 if __name__ == "__main__":
     # 開発環境用設定
-    app.run(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+    # 引数名を host と port に変更する
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
