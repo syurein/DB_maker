@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dragon Eye - Whitest Edition</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #ffffff;
+            color: #1e293b;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 3Dフリップ設定 */
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+
+        .flip-container {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-style: preserve-3d;
+        }
+
+        /* ホバー（またはアクティブ）時に180度回転 */
+        .group:hover .flip-container, 
+        .group:active .flip-container {
+            transform: rotateY(180deg);
+        }
+
+        .face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px; /* サークル形状を維持 */
+        }
+
+        /* 初期状態：オレンジ色のメッセージ面 */
+        .face-msg {
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            z-index: 2;
+        }
+
+        /* 裏側：カメラ映像面 */
+        .face-video {
+            transform: rotateY(180deg);
+            background: #000;
+        }
+
+        /* スキャンアニメーション */
+        @keyframes scan-line {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .animate-scan-line { animation: scan-line 2s linear infinite; }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+
+        video {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative bg-slate-50">
+
+    <header class="fixed top-0 w-full z-50 px-5 py-4 flex justify-between items-center bg-white/90 backdrop-blur-md border-b border-slate-200">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="resetApp()">
+            <div class="bg-orange-500 text-white p-1 rounded-md">
+                <i data-lucide="eye" class="w-5 h-5"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight text-slate-800">Dragon Eye</h1>
+        </div>
+        <button onclick="showSettings()" class="p-2 rounded-full hover:bg-slate-100 text-slate-500">
+            <i data-lucide="settings" class="w-6 h-6"></i>
+        </button>
+    </header>
+
+    <main class="pt-24 pb-24 px-4 min-h-screen flex flex-col items-center max-w-md mx-auto relative">
+
+        <div id="view-home" class="flex flex-col items-center justify-center w-full h-[70vh] animate-fade-in">
+            <div class="mb-8 text-center space-y-1">
+                <h2 class="text-2xl font-bold text-slate-800">商品査定</h2>
+                <p class="text-slate-500 text-sm font-medium">レンズを覗いてスキャンを開始</p>
+            </div>
+
+            <div class="relative group cursor-pointer mb-10 perspective-1000" onclick="captureImage()">
+                <div class="absolute inset-0 bg-orange-400 rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-opacity duration-500 animate-pulse"></div>
+                
+                <div class="relative w-64 h-64 rounded-full border-4 border-white shadow-2xl bg-slate-900 overflow-hidden transition-all duration-300 ring-4 ring-orange-500/20 group-hover:ring-orange-500/50">
+                    
+                    <div class="flip-container">
+                        <div class="face face-msg flex-col text-white shadow-inner">
+                            <div class="bg-white/20 p-4 rounded-full mb-3 backdrop-blur-sm">
+                                <i data-lucide="aperture" class="w-12 h-12 text-white animate-[spin_10s_linear_infinite]"></i>
+                            </div>
+                            <span class="text-lg font-black tracking-widest uppercase">Ready to Scan</span>
+                            <span class="text-[10px] opacity-70 mt-1 font-bold">Dragon Eye Engine v2.0</span>
+                        </div>
+
+                        <div class="face face-video">
+                            <video id="video" autoplay playsinline muted></video>
+                            <div class="absolute inset-0 border-[20px] border-black/10 pointer-events-none"></div>
+                            <div class="absolute inset-0 bg-gradient-to-t from-orange-500/30 to-transparent"></div>
+                            <div class="absolute top-1/2 left-0 w-full h-px bg-orange-400/50"></div>
+                            <div class="absolute top-0 left-1/2 w-px h-full bg-orange-400/50"></div>
+                        </div>
+                    </div>
+
+                    <div class="absolute inset-0 z-10 flex flex-col items-center justify-end pb-8 pointer-events-none">
+                        <div class="bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/30 transform transition-all duration-500 group-hover:translate-y-[-10px] group-hover:bg-orange-600/60">
+                            <span class="text-[10px] font-black text-white tracking-widest uppercase flex items-center gap-2">
+                                <i data-lucide="zap" class="w-3 h-3 fill-white"></i> Tap to Action
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center gap-4">
+                <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+                <button onclick="triggerUpload()" class="text-xs text-slate-400 underline uppercase tracking-widest font-bold hover:text-orange-500 transition-colors">Or upload a file</button>
+            </div>
+        </div>
+
+        <div id="view-scanning" class="hidden flex-col items-center justify-center w-full h-[70vh] space-y-8 animate-fade-in">
+            <div class="relative w-full aspect-[3/4] max-w-xs bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border-4 border-white ring-1 ring-slate-200">
+                <img id="scan-preview" class="absolute inset-0 w-full h-full object-cover">
+                <div class="absolute top-0 left-0 w-full h-1 bg-orange-500 shadow-[0_0_20px_rgba(249,115,22,1)] animate-scan-line z-10"></div>
+            </div>
+            <div class="text-center space-y-2">
+                <p class="text-orange-600 font-bold tracking-wider text-sm animate-pulse">データを解析中...</p>
+                <div class="w-48 h-1.5 bg-slate-200 rounded-full mx-auto overflow-hidden">
+                    <div id="scan-bar" class="h-full w-0 bg-orange-500 transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-result" class="hidden w-full pb-32 pt-2 animate-fade-in">
+            <div class="flex justify-between items-end mb-4 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-800 leading-tight">査定結果</h2>
+                    <p class="text-xs text-slate-500 mt-1" id="result-date">査定完了</p>
+                </div>
+                <div class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-md text-[10px] font-black border border-emerald-200">AI VERIFIED</div>
+            </div>
+
+            <div class="bg-gradient-to-br from-orange-400 to-orange-600 rounded-3xl p-6 text-white shadow-xl shadow-orange-200 mb-6 relative overflow-hidden">
+                <div class="flex items-baseline justify-between mb-1 opacity-90">
+                    <span class="text-sm font-bold tracking-wide">推定買取価格</span>
+                    <span class="text-xs font-bold bg-white/20 px-2 py-0.5 rounded uppercase" id="result-logic">---</span>
+                </div>
+                <div class="flex items-end gap-1 mt-1 mb-5">
+                    <span class="text-5xl font-black tracking-tighter" id="result-min">0</span>
+                    <span class="text-xl font-bold opacity-60 mb-2">~</span>
+                    <span class="text-3xl font-bold" id="result-max">0</span>
+                    <span class="text-lg font-bold opacity-80 ml-1 mb-1">円</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 border-t border-white/20 pt-4">
+                    <div>
+                        <p class="text-[10px] opacity-70 uppercase font-black">AI Confidence</p>
+                        <span class="text-2xl font-black" id="result-conf">---</span>
+                    </div>
+                    <div>
+                        <p class="text-[10px] opacity-70 uppercase font-black">Sample Count</p>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-2xl font-black" id="result-samples">0</span>
+                            <span class="text-xs font-bold opacity-80 uppercase">Units</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div class="text-slate-400 text-xs font-bold uppercase tracking-widest">Identified Item</div>
+                    <div class="text-slate-800 font-bold text-right" id="result-name">---</div>
+                </div>
+                <div class="mt-6">
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="file-search" class="w-4 h-4 text-orange-500"></i>
+                            <span class="text-xs font-black text-slate-800 uppercase tracking-tighter">AI Reasoning</span>
+                        </div>
+                        <p id="result-comment" class="text-sm leading-relaxed text-slate-600 font-medium">---</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-settings" class="hidden w-full animate-fade-in">
+            <button onclick="resetApp()" class="flex items-center gap-2 text-slate-500 font-bold text-sm mb-6"><i data-lucide="chevron-left" class="w-4 h-4"></i> Back to Home</button>
+            <h2 class="text-xl font-bold text-slate-800 mb-4">System Settings</h2>
+            <div class="p-4 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-xs font-bold flex items-center gap-3">
+                <div class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
+                API GATEWAY CONNECTED
+            </div>
+        </div>
+    </main>
+
+    <div id="footer-actions" class="hidden fixed bottom-0 left-0 w-full p-4 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50">
+        <div class="flex gap-3 max-w-md mx-auto">
+            <button onclick="resetApp()" class="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl text-xs uppercase tracking-widest active:bg-slate-200 transition-colors">Reset</button>
+            <button onclick="alert('PDF生成')" class="flex-[2] bg-slate-900 text-white font-black py-4 rounded-2xl text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-transform">Get Full Report</button>
+        </div>
+    </div>
+
+    <canvas id="capture-canvas" class="hidden"></canvas>
+
+    <script>
+        let stream = null;
+
+        // --- カメラ開始 ---
+        async function startCamera() {
+            const video = document.getElementById('video');
+            try {
+                // 背面カメラを優先
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Camera access denied:", err);
+            }
+        }
+
+        // --- 画像キャプチャ ---
+        async function captureImage() {
+            if (!stream) {
+                await startCamera();
+                return;
+            }
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('capture-canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+
+            canvas.toBlob((blob) => {
+                const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+                processFile(file);
+            }, 'image/jpeg', 0.8);
+        }
+
+        // --- アップロード処理 ---
+        function triggerUpload() { document.getElementById('imageInput').click(); }
+        function handleFileSelect(event) { if (event.target.files[0]) processFile(event.target.files[0]); }
+
+        // --- API通信 (実フェッチ) ---
+        async function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => document.getElementById('scan-preview').src = e.target.result;
+            reader.readAsDataURL(file);
+
+            switchView('view-scanning');
+            stopCamera();
+
+            const bar = document.getElementById('scan-bar');
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 95) progress = 95;
+                bar.style.width = progress + '%';
+            }, 200);
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                // 【フェッチ実行】
+                const response = await fetch('/api/appraise', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Server response error");
+
+                const data = await response.json();
+                
+                clearInterval(interval);
+                bar.style.width = '100%';
+                setTimeout(() => renderResult(data), 600);
+
+            } catch (error) {
+                clearInterval(interval);
+                console.error("Appraisal Failed:", error);
+                alert("査定に失敗しました。サーバーの設定を確認してください。");
+                resetApp();
+            }
+        }
+
+        // --- 結果のレンダリング ---
+        function renderResult(data) {
+            const final = data.final_decision || {};
+            const ai = data.ai_filter_res || {};
+            const info = data.product_info || { tentative_name: "不明な商品" };
+
+            document.getElementById('result-min').innerText = (final.range_min || 0).toLocaleString();
+            document.getElementById('result-max').innerText = (final.range_max || 0).toLocaleString();
+            document.getElementById('result-name').innerText = info.tentative_name;
+            document.getElementById('result-logic').innerText = final.logic || "NEURAL_NET";
+            document.getElementById('result-conf').innerText = final.confidence_score || "0%";
+            document.getElementById('result-samples').innerText = data.valid_records_count || 0;
+            document.getElementById('result-comment').innerText = ai.filter_reasoning || "詳細な分析データが取得できませんでした。";
+            document.getElementById('result-date').innerText = new Date().toLocaleString() + " 査定完了";
+
+            switchView('view-result');
+        }
+
+        // --- 画面切り替え ---
+        function switchView(viewId) {
+            document.querySelectorAll('main > div').forEach(el => el.classList.add('hidden'));
+            document.getElementById(viewId).classList.remove('hidden');
+            document.getElementById('footer-actions').classList.toggle('hidden', viewId !== 'view-result');
+            lucide.createIcons();
+        }
+
+        // --- カメラ停止 ---
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+            }
+        }
+
+        // --- アプリリセット ---
+        function resetApp() {
+            stopCamera();
+            document.getElementById('imageInput').value = "";
+            document.getElementById('scan-bar').style.width = '0%';
+            switchView('view-home');
+            startCamera();
+        }
+
+        function showSettings() { switchView('view-settings'); }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            startCamera();
+        });
+    </script>
+</body>
+</html>
