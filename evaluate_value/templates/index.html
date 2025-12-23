@@ -214,7 +214,7 @@
                 <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                     <div class="space-y-0.5">
                         <label class="text-sm font-black text-slate-800 uppercase tracking-tight">高精度AI査定</label>
-                        <p class="text-[10px] text-slate-400 font-medium leading-tight">ON: 低速・高精度モード<br>OFF: 速度優先モード</p>
+                        <p class="text-[10px] text-slate-400 font-medium leading-tight">OFF: 超高速モード<br>ON: 超高精度モード</p>
                     </div>
                     <div class="relative inline-block w-12 h-6 align-middle select-none">
                         <input type="checkbox" id="mode-toggle" onchange="saveSettings()" 
@@ -248,7 +248,7 @@
         // --- 設定管理 ---
         function saveSettings() {
             const isChecked = document.getElementById('mode-toggle').checked;
-            localStorage.setItem('appraisal_mode', isChecked ? 'default' : 'non');
+            localStorage.setItem('appraisal_mode', !isChecked ? 'default' : 'non');
         }
 
         function loadSettings() {
