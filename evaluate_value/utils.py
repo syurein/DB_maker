@@ -141,7 +141,7 @@ class RakutenMarketManager:
         except: return []
 
 
-class janpara_price:
+class Janpara_price:
     def __init__(self):
         print('initialized')
     def fetch_price(self, product_name: str):
@@ -186,7 +186,7 @@ class StatisticalEngine:
 
 # --- 5. AI Filter & Estimator ---
 class AI_Filter_Estimator:
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-pro"):
         self.model_name = model_name
 
     def filter_by_name_only(self, target_name: str, records: list) -> list:
@@ -223,3 +223,5 @@ class AI_Filter_Estimator:
             )
             return extract_json(response.text)
         except: return {"final_ai_price": 0, "reasoning": "AI error"}
+if __name__ == "__main__":
+    print(Janpara_price().fetch_price('WF1000XM5'))
