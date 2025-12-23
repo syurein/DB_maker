@@ -25,13 +25,12 @@
         .flip-container {
             width: 100%;
             height: 100%;
-            transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
             transform-style: preserve-3d;
         }
 
-        /* ホバー（またはアクティブ）時に180度回転 */
-        .group:hover .flip-container, 
-        .group:active .flip-container {
+        /* 自動回転用のクラス */
+        .flip-container.is-flipped {
             transform: rotateY(180deg);
         }
 
@@ -43,7 +42,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 9999px; /* サークル形状を維持 */
+            border-radius: 9999px;
         }
 
         /* 初期状態：オレンジ色のメッセージ面 */
@@ -100,15 +99,15 @@
         <div id="view-home" class="flex flex-col items-center justify-center w-full h-[70vh] animate-fade-in">
             <div class="mb-8 text-center space-y-1">
                 <h2 class="text-2xl font-bold text-slate-800">商品査定</h2>
-                <p class="text-slate-500 text-sm font-medium">レンズを覗いてスキャンを開始</p>
+                <p class="text-slate-500 text-sm font-medium">レンズをタップしてスキャンを開始</p>
             </div>
 
             <div class="relative group cursor-pointer mb-10 perspective-1000" onclick="captureImage()">
                 <div class="absolute inset-0 bg-orange-400 rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-opacity duration-500 animate-pulse"></div>
                 
-                <div class="relative w-64 h-64 rounded-full border-4 border-white shadow-2xl bg-slate-900 overflow-hidden transition-all duration-300 ring-4 ring-orange-500/20 group-hover:ring-orange-500/50">
+                <div class="relative w-64 h-64 rounded-full border-4 border-white shadow-2xl bg-slate-900 overflow-hidden transition-all duration-300 ring-4 ring-orange-500/20">
                     
-                    <div class="flip-container">
+                    <div id="lens-flip" class="flip-container">
                         <div class="face face-msg flex-col text-white shadow-inner">
                             <div class="bg-white/20 p-4 rounded-full mb-3 backdrop-blur-sm">
                                 <i data-lucide="aperture" class="w-12 h-12 text-white animate-[spin_10s_linear_infinite]"></i>
@@ -127,7 +126,7 @@
                     </div>
 
                     <div class="absolute inset-0 z-10 flex flex-col items-center justify-end pb-8 pointer-events-none">
-                        <div class="bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/30 transform transition-all duration-500 group-hover:translate-y-[-10px] group-hover:bg-orange-600/60">
+                        <div class="bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/30 transform transition-all duration-500 group-active:scale-95">
                             <span class="text-[10px] font-black text-white tracking-widest uppercase flex items-center gap-2">
                                 <i data-lucide="zap" class="w-3 h-3 fill-white"></i> Tap to Action
                             </span>
@@ -228,12 +227,26 @@
 
     <script>
         let stream = null;
+        let flipInterval = null;
+
+        // --- 自動回転の開始 ---
+        function startAutoFlip() {
+            const flipContainer = document.getElementById('lens-flip');
+            if (flipInterval) clearInterval(flipInterval);
+            
+            flipInterval = setInterval(() => {
+                // ホーム画面が表示されているときだけ回転させる
+                const homeView = document.getElementById('view-home');
+                if (!homeView.classList.contains('hidden')) {
+                    flipContainer.classList.toggle('is-flipped');
+                }
+            }, 3000); // 3秒周期
+        }
 
         // --- カメラ開始 ---
         async function startCamera() {
             const video = document.getElementById('video');
             try {
-                // 背面カメラを優先
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
                 });
@@ -267,7 +280,7 @@
         function triggerUpload() { document.getElementById('imageInput').click(); }
         function handleFileSelect(event) { if (event.target.files[0]) processFile(event.target.files[0]); }
 
-        // --- API通信 (実フェッチ) ---
+        // --- API通信 ---
         async function processFile(file) {
             const reader = new FileReader();
             reader.onload = (e) => document.getElementById('scan-preview').src = e.target.result;
@@ -288,14 +301,12 @@
             formData.append('image', file);
 
             try {
-                // 【フェッチ実行】
                 const response = await fetch('/api/appraise', {
                     method: 'POST',
                     body: formData
                 });
 
                 if (!response.ok) throw new Error("Server response error");
-
                 const data = await response.json();
                 
                 clearInterval(interval);
@@ -349,6 +360,8 @@
             stopCamera();
             document.getElementById('imageInput').value = "";
             document.getElementById('scan-bar').style.width = '0%';
+            // 回転状態を一度リセット（表面に戻す）
+            document.getElementById('lens-flip').classList.remove('is-flipped');
             switchView('view-home');
             startCamera();
         }
@@ -359,6 +372,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
             startCamera();
+            startAutoFlip(); // 自動回転開始
         });
     </script>
 </body>
