@@ -186,7 +186,7 @@ class StatisticalEngine:
 
 # --- 5. AI Filter & Estimator ---
 class AI_Filter_Estimator:
-    def __init__(self, model_name: str = "gemini-2.5-pro"):
+    def __init__(self, model_name: str = "gemini-2.0-flash"):
         self.model_name = model_name
 
     def filter_by_name_only(self, target_name: str, records: list) -> list:

@@ -52,7 +52,7 @@ class HybridBrain:
         self.market_rakuten = RakutenMarketManager()
         self.stats = StatisticalEngine()
         self.filter_estimator = AI_Filter_Estimator()
-        self.janpara_price = Janpara_price()
+        #self.janpara_price = Janpara_price()
     def process(self, image: Image.Image, option: str) :
         # 1. 画像解析 (Gemini Vision)
         v_res = self.vision.analyze_image(image)
@@ -64,9 +64,9 @@ class HybridBrain:
         # 2. 市場データ収集 (CSV + 楽天)
         csv_data = self.market_csv.fetch_market_data(v_res.get("search_queries", []))
         rakuten_data = self.market_rakuten.fetch_data(v_res.get("search_keyword", t_name))
-        janpara_data = self.janpara_price.fetch_price(t_name)
-        raw_records = csv_data + rakuten_data + janpara_data
-        print(f'csv:{csv_data}, rakuten:{rakuten_data}, janpara:{janpara_data}')
+        #janpara_data = self.janpara_price.fetch_price(t_name)
+        raw_records = csv_data + rakuten_data 
+        #print(f'csv:{csv_data}, rakuten:{rakuten_data}, janpara:{janpara_data}')
         # --- パターンA: 市場データが見つからない場合 ---
         if not raw_records:
             # AIの推定価格を数値として取得
