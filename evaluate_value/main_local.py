@@ -16,11 +16,30 @@ from utils import (
     AI_Filter_Estimator,
     extract_json
 )
-
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import logging
 # --- 0. 基本設定 ---
 load_dotenv()
 app = Flask(__name__)
+# --- 0. 基本設定とログ ---
+load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+app = Flask(__name__)
+
+# 【対策1】ファイルサイズ制限: 5MB以上のリクエストは即座に拒否
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
+
+# 【対策2】レートリミットの設定
+# IPアドレスごとにリクエスト回数を制限
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["100 per day", "30 per hour"],
+    storage_uri="memory://", # 本番環境で複数サーバーにするなら Redis 等を推奨
+)
 
 
 
@@ -137,28 +156,53 @@ def index():
     return render_template('index.html')
 
 @app.route('/api/appraise', methods=['POST'])
+# 【対策3】特定のエンドポイントに厳格なリミットを適用
+# 1分間に5回、かつ1時間に30回までに制限（査定は重い処理なので厳しめ）
+@limiter.limit("5 per minute; 30 per hour")
 def appraise():
-    if 'option' in request.args:
-        option=request.args.get('option')
-    else :
-        option='default'
-    
+    # 【対策4】オプションのバリデーション
+    option = request.args.get('option', 'default')
+    if option not in ['default', 'non']:
+        option = 'default'
+
+    # 【対策5】ファイルの存在と形式チェック
     if 'image' not in request.files:
-        return jsonify({"error": "画像がありません"}), 400
+        return jsonify({"error": "No image uploaded"}), 400
     
+    file = request.files['image']
+    
+    if file.filename == '':
+        return jsonify({"error": "Empty filename"}), 400
+
+    # MIMEタイプが画像であることを確認
+    if not file.content_type.startswith('image/'):
+        return jsonify({"error": "File type not supported. Please upload an image."}), 400
+
     try:
-        # 画像を開いてRGBに変換
-        img = Image.open(request.files['image'].stream).convert("RGB")
+        # 画像を開く（ここでMAX_CONTENT_LENGTHにより巨大画像は既に弾かれている）
+        img = Image.open(file.stream).convert("RGB")
         
+        # 【対策6】内部で画像をリサイズ（計算負荷軽減）
+        # 1024px以上に大きい場合は縮小するなどの処理を入れるとより安全
+        img.thumbnail((1024, 1024))
+
         # 脳内処理開始
         res = brain.process(img, option=option) 
         return jsonify(res)
-    except Exception as e:
-        print(f"Error during appraisal: {e}")
-        return jsonify({"error": str(e)}), 500
 
+    except Exception as e:
+        logger.error(f"Appraisal Error: {str(e)}")
+        return jsonify({"error": "Internal server error during analysis"}), 500
+
+# 【対策7】レートリミット超過時のエラーハンドリング
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({"error": "Too many requests. Please wait a moment."}), 429
+
+# 【対策8】ファイルサイズ超過時のエラーハンドリング
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({"error": "File is too large (Max 5MB)"}), 413
 
 if __name__ == "__main__":
-    # 開発環境用設定
-    # 引数名を host と port に変更する
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
