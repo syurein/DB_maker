@@ -16,3 +16,4 @@ python-dotenv
 gradio
 google-genai
 polars
+Flask-Limiter
