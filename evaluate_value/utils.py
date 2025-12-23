@@ -13,6 +13,7 @@ from flask import Flask, request, render_template, jsonify
 from google import genai
 from google.genai import types
 from playwright.sync_api import sync_playwright
+load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 client = genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
 # --- 1. Vision AI (Gemini) ---
@@ -190,22 +191,29 @@ class AI_Filter_Estimator:
     def filter_by_name_only(self, target_name: str, records: list) -> list:
         if not client or not records: return []
         candidates = "\n".join([f"{i}: {r['product_name']}" for i, r in enumerate(records)])
-        prompt = f"ターゲット: {target_name}\nリスト:\n{candidates}\n上記から明らかに異なる物や付属品のみのインデックスを除外した『valid_indices』をJSONで返して。"
+        print(target_name)
+        prompt = f"商品名: {target_name}\nリスト:\n{candidates}\n上記から明らかに商品名が異なるものやケースなどのアクセサリ、付属品のみのインデックスを除外した『valid_indices』をJSONで返して。{{'valid_indices': [4, 5, 6, 7, 8, 9]}}"
         
         try:
             response = client.models.generate_content(
                 model=self.model_name, contents=prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json")
             )
-            res = extract_json(response.text)
-            return [int(i) for i in res.get("valid_indices", []) if int(i) < len(records)]
-        except: return list(range(len(records)))
+
+            res = json.loads(response.text)
+            print(res)
+            return [int(i) for i in res["valid_indices"] if int(i) < len(records)]
+        except Exception as e:
+            # 何が起きたか出力する
+            print(f"Error during AI filtering: {e}")
+            # エラー時は全件返す（または空を返す）安全策
+            return list(range(len(records)))
 
     def estimate_final_price(self, target_name: str, filtered_records: list, stats_res: dict) -> dict:
         if not client: return {"final_ai_price": 0, "reasoning": "Error"}
         
-        records_json = json.dumps([{"n": r["product_name"], "p": r["price"]} for r in filtered_records[:20]], ensure_ascii=False)
-        prompt = f"商品: {target_name}\n統計: {stats_res}\n市場データ一部: {records_json}\n最終的な買取価格1つを『final_ai_price』と『reasoning』で決定して。何か価格は決定して。また理由は日本語で出力して。"
+        #records_json = json.dumps([{"n": r["product_name"], "p": r["price"]} for r in filtered_records[:20]], ensure_ascii=False)
+        prompt = f"商品: {target_name}\n市場データ統計: {stats_res}\n最終的な買取価格1つを『final_ai_price』と『reasoning』で決定して。何か価格は決定して。また理由は日本語で出力して。"
         
         try:
             response = client.models.generate_content(

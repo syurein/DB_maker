@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dragon Eye - Whitest Edition</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #ffffff;
+            color: #1e293b; /* slate-800 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* アニメーション定義 */
+        @keyframes scan-line {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .animate-scan-line {
+            animation: scan-line 2s linear infinite;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.4s ease-out forwards;
+        }
+
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(0.98); }
+        }
+        .animate-pulse-soft {
+            animation: pulse-soft 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative selection:bg-orange-500 selection:text-white bg-slate-50">
+
+    <!-- ヘッダー -->
+    <header class="fixed top-0 w-full z-50 px-5 py-4 flex justify-between items-center bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="resetApp()">
+            <!-- チーム Whitest らしい白とオレンジのロゴイメージ -->
+            <div class="bg-orange-500 text-white p-1 rounded-md">
+                <i data-lucide="eye" class="w-5 h-5"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight text-slate-800">
+                Dragon Eye
+            </h1>
+        </div>
+        <button onclick="showSettings()" class="p-2 rounded-full hover:bg-slate-100 transition-colors text-slate-500">
+            <i data-lucide="settings" class="w-6 h-6"></i>
+        </button>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="pt-24 pb-24 px-4 min-h-screen flex flex-col items-center max-w-md mx-auto relative">
+
+        <!-- 1. ホーム画面 (シンプル・白・清潔感) -->
+        <div id="view-home" class="flex flex-col items-center justify-center w-full h-[70vh] animate-fade-in">
+            
+            <div class="mb-8 text-center space-y-1">
+                <br>
+                <h2 class="text-2xl font-bold text-slate-800">商品査定</h2>
+                <p class="text-slate-500 text-sm">AIと統計データで瞬時に価格を算出</p>
+            </div>
+
+            <div class="relative group cursor-pointer mb-10" onclick="startScan()">
+                <!-- 波紋エフェクト (薄いオレンジ) -->
+                <div class="absolute inset-0 bg-orange-400 rounded-full blur-2xl opacity-20 group-hover:opacity-40 transition-opacity duration-500 animate-pulse"></div>
+                
+                <!-- メインボタン -->
+                <button class="relative w-56 h-56 rounded-full bg-white border-4 border-orange-500 shadow-xl shadow-orange-500/20 flex flex-col items-center justify-center transition-transform duration-300 transform group-hover:scale-105 active:scale-95">
+                    <i data-lucide="camera" class="w-16 h-16 text-orange-500 mb-2"></i>
+                    <span class="text-xl font-bold text-slate-800 tracking-widest">SCAN</span>
+                </button>
+            </div>
+
+            <div class="flex items-center justify-center gap-2 text-xs font-bold text-orange-600 bg-orange-50 px-4 py-2 rounded-full border border-orange-100">
+                <i data-lucide="zap" class="w-4 h-4 fill-orange-500"></i>
+                <span>Ready to Scan</span>
+            </div>
+        </div>
+
+        <!-- 2. スキャン中画面 (視認性重視) -->
+        <div id="view-scanning" class="hidden flex-col items-center justify-center w-full h-[70vh] space-y-8 animate-fade-in">
+            <!-- ビューファインダー -->
+            <div class="relative w-full aspect-[3/4] max-w-xs bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border-4 border-white ring-1 ring-slate-200">
+                <!-- カメラ映像の代わり (暗い背景) -->
+                <div class="absolute inset-0 bg-slate-800 flex items-center justify-center text-slate-600">
+                    <i data-lucide="image" class="w-12 h-12 opacity-20"></i>
+                </div>
+
+                <!-- グリッド線 (白で細く) -->
+                <div class="absolute inset-0 grid grid-cols-2 grid-rows-2 opacity-30 pointer-events-none">
+                    <div class="border-r border-b border-white/50"></div>
+                    <div class="border-b border-white/50"></div>
+                    <div class="border-r border-white/50"></div>
+                    <div></div>
+                </div>
+
+                <!-- スキャンライン (鮮やかなオレンジ) -->
+                <div class="absolute top-0 left-0 w-full h-1 bg-orange-500 shadow-[0_0_20px_rgba(249,115,22,1)] animate-scan-line z-10"></div>
+
+                <!-- ターゲット枠 -->
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div class="w-48 h-48 border-2 border-orange-400/80 rounded-lg relative">
+                        <div class="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-orange-500 -mt-1 -ml-1"></div>
+                        <div class="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-orange-500 -mt-1 -mr-1"></div>
+                        <div class="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-orange-500 -mb-1 -ml-1"></div>
+                        <div class="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-orange-500 -mb-1 -mr-1"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ステータス -->
+            <div class="text-center space-y-2">
+                <p class="text-orange-600 font-bold tracking-wider text-sm animate-pulse">解析中...</p>
+                <div class="w-48 h-1.5 bg-slate-200 rounded-full mx-auto overflow-hidden">
+                    <div id="scan-bar" class="h-full w-0 bg-orange-500 transition-all duration-100 ease-out"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 結果画面 (Whitest x 地震情報UIインスパイア) -->
+        <div id="view-result" class="hidden w-full pb-32 pt-2 animate-fade-in">
+            
+            <!-- 上部ステータスバー -->
+            <div class="flex justify-between items-end mb-4 px-1">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-800 leading-tight">査定結果</h2>
+                    <p class="text-xs text-slate-500 mt-1">2025年12月11日 査定完了</p>
+                </div>
+                <div class="bg-slate-100 text-slate-600 px-3 py-1 rounded-md text-xs font-bold border border-slate-200">
+                    ID: #8821
+                </div>
+            </div>
+
+            <!-- メインカード：地震情報の「最大震度」パネルを参考にしたオレンジの帯 -->
+            <div class="bg-gradient-to-br from-orange-400 to-orange-500 rounded-2xl p-5 text-white shadow-lg shadow-orange-200 mb-6 relative overflow-hidden">
+                <!-- 装飾背景 -->
+                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="flex items-baseline justify-between mb-1 opacity-90">
+                    <span class="text-sm font-bold tracking-wide">推定買取価格</span>
+                    <span class="text-xs font-medium bg-white/20 px-2 py-0.5 rounded text-white">状態: 良好A</span>
+                </div>
+
+                <div class="flex items-end gap-1 mt-1 mb-4">
+                    <span class="text-5xl font-black tracking-tight leading-none" id="result-min">2.0</span>
+                    <span class="text-2xl font-bold opacity-80 mb-1">~</span>
+                    <span class="text-3xl font-bold tracking-tight leading-none" id="result-max">2.2</span>
+                    <span class="text-lg font-bold opacity-80 ml-1 mb-1">万円</span>
+                </div>
+
+                <div class="flex items-center gap-4 border-t border-white/20 pt-3">
+                    <div>
+                        <p class="text-[10px] opacity-70 uppercase font-bold">Confidence</p>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-2xl font-bold leading-none">92</span>
+                            <span class="text-sm font-bold opacity-80">%</span>
+                        </div>
+                    </div>
+                    <div class="w-px h-8 bg-white/20"></div>
+                    <div>
+                        <p class="text-[10px] opacity-70 uppercase font-bold">Samples</p>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-2xl font-bold leading-none">128</span>
+                            <span class="text-sm font-bold opacity-80">件</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 商品詳細情報 (地震情報のリストUIを参考) -->
+            <div class="space-y-4">
+                
+                <div class="flex justify-between items-start border-b border-slate-100 pb-3">
+                    <div class="text-slate-500 text-sm font-medium">商品名</div>
+                    <div class="text-slate-800 font-bold text-right max-w-[60%]" id="result-name">Sony WH-1000XM4 Black</div>
+                </div>
+
+                <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div class="text-slate-500 text-sm font-medium">カテゴリ</div>
+                    <div class="text-slate-800 font-bold text-right" id="result-category">ヘッドフォン</div>
+                </div>
+
+                <!-- AIコメントセクション (地震情報の地域リストのようなブロックデザイン) -->
+                <div class="mt-6">
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="bg-orange-100 text-orange-600 p-1 rounded">
+                            <i data-lucide="message-square-quote" class="w-4 h-4"></i>
+                        </div>
+                        <span class="text-sm font-bold text-slate-800">AI分析レポート</span>
+                    </div>
+                    
+                    <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 text-sm leading-relaxed text-slate-700">
+                        <span class="font-bold text-slate-900 block mb-1">市場トレンド:</span>
+                        <p id="result-comment">
+                            後継機の発売により全体相場は緩やかな下落傾向にありますが、本品は非常に状態が良く、付属品も完備されていると推測されるため、相場の上限に近い価格帯での買取が期待できます。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 類似商品の参照ボタン -->
+                <div class="mt-4 pt-4">
+                    <button class="w-full py-3 bg-white border border-slate-200 rounded-xl text-slate-600 font-bold text-sm shadow-sm flex items-center justify-center gap-2 active:bg-slate-50">
+                        <span>類似取引履歴を見る</span>
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 4. 設定画面 -->
+        <div id="view-settings" class="hidden w-full animate-fade-in">
+            <div class="flex items-center gap-3 mb-8">
+                <button onclick="resetApp()" class="p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-500">
+                    <i data-lucide="arrow-left" class="w-6 h-6"></i>
+                </button>
+                <h2 class="text-xl font-bold text-slate-800">設定</h2>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+                    <h3 class="font-bold text-slate-800 mb-3 text-sm">システム状態</h3>
+                    <div class="flex items-center gap-2 text-sm text-emerald-600 font-medium bg-emerald-50 p-2 rounded border border-emerald-100 mb-2">
+                        <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        Gemini API: 正常稼働中
+                    </div>
+                    <div class="flex items-center gap-2 text-sm text-emerald-600 font-medium bg-emerald-50 p-2 rounded border border-emerald-100">
+                        <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        Supabase: 正常稼働中
+                    </div>
+                </div>
+                
+                <div class="p-5 bg-slate-50 rounded-xl border border-slate-200 text-slate-400">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-bold text-slate-500 text-sm">管理者モード</h3>
+                        <i data-lucide="lock" class="w-4 h-4"></i>
+                    </div>
+                    <p class="text-xs">設定を変更するには認証が必要です</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- フッターアクション (結果画面のみ表示、白背景に固定) -->
+    <div id="footer-actions" class="hidden fixed bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 z-50">
+        <div class="flex gap-3 max-w-md mx-auto">
+            <button onclick="resetApp()" class="flex-1 bg-white border-2 border-slate-200 text-slate-600 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-colors active:bg-slate-50">
+                <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                リセット
+            </button>
+            <button onclick="alert('詳細データ機能は開発中です')" class="flex-[2] bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-slate-400/20 flex items-center justify-center gap-2 transition-transform active:scale-95">
+                <i data-lucide="file-text" class="w-5 h-5"></i>
+                詳細レポート
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript ロジック -->
+    <script>
+        // データ（数値フォーマットは万単位に変更）
+        const mockResult = {
+            productName: "Sony WH-1000XM4 Black",
+            category: "オーディオ機器 / ヘッドフォン",
+            priceMin: 2.0,
+            priceMax: 2.2,
+            confidence: 92,
+            samples: 128
+        };
+
+        // ビュー切り替え
+        function switchView(viewId) {
+            document.querySelectorAll('main > div').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById(viewId);
+            target.classList.remove('hidden');
+            
+            // フッター制御
+            const footer = document.getElementById('footer-actions');
+            if (viewId === 'view-result') {
+                footer.classList.remove('hidden');
+                // アニメーションリセット
+                target.classList.remove('animate-fade-in');
+                void target.offsetWidth; 
+                target.classList.add('animate-fade-in');
+            } else {
+                footer.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        // スキャン動作
+        function startScan() {
+            switchView('view-scanning');
+            const bar = document.getElementById('scan-bar');
+            let width = 0;
+            const interval = setInterval(() => {
+                width += 1.5;
+                if (width > 100) width = 100;
+                bar.style.width = width + '%';
+                
+                if (width >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => showResult(), 600);
+                }
+            }, 30);
+        }
+
+        function showResult() {
+            switchView('view-result');
+        }
+
+        function resetApp() {
+            document.getElementById('scan-bar').style.width = '0%';
+            switchView('view-home');
+        }
+
+        function showSettings() {
+            switchView('view-settings');
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

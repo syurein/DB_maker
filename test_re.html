@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ãæ¢ãã®ãã¼ã¸ã¯è¦ã¤ããã¾ããã§ãã</title>
+    <style>
+        body {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            text-align: center;
+            max-width: 600px;
+            background-color: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #d9534f;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        p {
+            line-height: 1.6;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .btn {
+            display: inline-block;
+            background-color: #5cb85c;
+            color: white;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        
+        .btn:hover {
+            background-color: #4cae4c;
+        }
+        
+        .magnifier {
+            position: relative;
+            display: inline-block;
+            margin: 0 auto 30px;
+            width: 100px;
+            height: 100px;
+        }
+        
+        .magnifier:before {
+            content: "";
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 10px solid #d9534f;
+            border-radius: 50%;
+            top: 0;
+            left: 0;
+        }
+        
+        .magnifier:after {
+            content: "";
+            position: absolute;
+            width: 10px;
+            height: 50px;
+            background-color: #d9534f;
+            bottom: 0;
+            right: 10px;
+            transform: rotate(-45deg);
+            border-radius: 5px;
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: 25px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+            
+            .magnifier {
+                width: 80px;
+                height: 80px;
+            }
+            
+            .magnifier:before {
+                width: 45px;
+                height: 45px;
+                border-width: 8px;
+            }
+            
+            .magnifier:after {
+                width: 8px;
+                height: 40px;
+                right: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="magnifier"></div>
+        <h1>ãæ¢ãã®ãã¼ã¸ã¯è¦ã¤ããã¾ããã§ãã</h1>
+        <p>ä¸æçã«ã¢ã¯ã»ã¹ã§ããªããç§»åããããè¡¨ç¤ºã§ãã¾ããã<br>
+        ãææ°ã§ããããããã¼ã¸ããã¢ã¯ã»ã¹ãç´ãã¦ãã ããã</p>
+        <a href="/?waf" class="btn">ããããã¼ã¸ã¸æ»ã</a>
+    </div>
+</body>
+</html>

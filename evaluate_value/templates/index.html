@@ -18,21 +18,14 @@
         }
 
         /* 3Dフリップ設定 */
-        .perspective-1000 {
-            perspective: 1000px;
-        }
-
+        .perspective-1000 { perspective: 1000px; }
         .flip-container {
             width: 100%;
             height: 100%;
             transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
             transform-style: preserve-3d;
         }
-
-        /* 自動回転用のクラス */
-        .flip-container.is-flipped {
-            transform: rotateY(180deg);
-        }
+        .flip-container.is-flipped { transform: rotateY(180deg); }
 
         .face {
             position: absolute;
@@ -45,13 +38,11 @@
             border-radius: 9999px;
         }
 
-        /* 初期状態：オレンジ色のメッセージ面 */
         .face-msg {
             background: linear-gradient(135deg, #f97316, #ea580c);
             z-index: 2;
         }
 
-        /* 裏側：カメラ映像面 */
         .face-video {
             transform: rotateY(180deg);
             background: #000;
@@ -77,6 +68,16 @@
             width: 100%;
             height: 100%;
             border-radius: 9999px;
+        }
+
+        /* --- 修正済みトグルスイッチ --- */
+        .toggle-dot { 
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s;
+        }
+        input:checked + .toggle-bg { background-color: #f97316; }
+        input:checked ~ .toggle-dot { 
+            transform: translateX(24px); 
+            border-color: #f97316;
         }
     </style>
 </head>
@@ -106,7 +107,6 @@
                 <div class="absolute inset-0 bg-orange-400 rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-opacity duration-500 animate-pulse"></div>
                 
                 <div class="relative w-64 h-64 rounded-full border-4 border-white shadow-2xl bg-slate-900 overflow-hidden transition-all duration-300 ring-4 ring-orange-500/20">
-                    
                     <div id="lens-flip" class="flip-container">
                         <div class="face face-msg flex-col text-white shadow-inner">
                             <div class="bg-white/20 p-4 rounded-full mb-3 backdrop-blur-sm">
@@ -208,10 +208,26 @@
 
         <div id="view-settings" class="hidden w-full animate-fade-in">
             <button onclick="resetApp()" class="flex items-center gap-2 text-slate-500 font-bold text-sm mb-6"><i data-lucide="chevron-left" class="w-4 h-4"></i> Back to Home</button>
-            <h2 class="text-xl font-bold text-slate-800 mb-4">System Settings</h2>
-            <div class="p-4 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-xs font-bold flex items-center gap-3">
-                <div class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
-                API GATEWAY CONNECTED
+            <h2 class="text-xl font-bold text-slate-800 mb-6">System Settings</h2>
+            
+            <div class="space-y-4">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div class="space-y-0.5">
+                        <label class="text-sm font-black text-slate-800 uppercase tracking-tight">高精度AI査定</label>
+                        <p class="text-[10px] text-slate-400 font-medium leading-tight">ON: 低速・高精度モード<br>OFF: 速度優先モード</p>
+                    </div>
+                    <div class="relative inline-block w-12 h-6 align-middle select-none">
+                        <input type="checkbox" id="mode-toggle" onchange="saveSettings()" 
+                               class="absolute block w-full h-full opacity-0 cursor-pointer z-20 outline-none"/>
+                        <div class="toggle-bg block overflow-hidden h-6 rounded-full bg-slate-200 transition-colors duration-300"></div>
+                        <div class="toggle-dot absolute top-0 left-0 w-6 h-6 bg-white rounded-full shadow border-2 border-slate-200 z-10 pointer-events-none"></div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 text-[10px] font-black flex items-center gap-3">
+                    <div class="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
+                    API GATEWAY: CONNECTED
+                </div>
             </div>
         </div>
     </main>
@@ -229,21 +245,30 @@
         let stream = null;
         let flipInterval = null;
 
-        // --- 自動回転の開始 ---
+        // --- 設定管理 ---
+        function saveSettings() {
+            const isChecked = document.getElementById('mode-toggle').checked;
+            localStorage.setItem('appraisal_mode', isChecked ? 'default' : 'non');
+        }
+
+        function loadSettings() {
+            const mode = localStorage.getItem('appraisal_mode') || 'default';
+            document.getElementById('mode-toggle').checked = (mode === 'default');
+        }
+
+        // --- 自動回転ロジック ---
         function startAutoFlip() {
             const flipContainer = document.getElementById('lens-flip');
             if (flipInterval) clearInterval(flipInterval);
-            
             flipInterval = setInterval(() => {
-                // ホーム画面が表示されているときだけ回転させる
                 const homeView = document.getElementById('view-home');
                 if (!homeView.classList.contains('hidden')) {
                     flipContainer.classList.toggle('is-flipped');
                 }
-            }, 3000); // 3秒周期
+            }, 3000);
         }
 
-        // --- カメラ開始 ---
+        // --- カメラ制御 ---
         async function startCamera() {
             const video = document.getElementById('video');
             try {
@@ -256,31 +281,32 @@
             }
         }
 
-        // --- 画像キャプチャ ---
-        async function captureImage() {
-            if (!stream) {
-                await startCamera();
-                return;
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
             }
+        }
 
+        // --- 撮影・ファイル処理 ---
+        async function captureImage() {
+            if (!stream) { await startCamera(); return; }
             const video = document.getElementById('video');
             const canvas = document.getElementById('capture-canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0);
-
             canvas.toBlob((blob) => {
                 const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
                 processFile(file);
             }, 'image/jpeg', 0.8);
         }
 
-        // --- アップロード処理 ---
         function triggerUpload() { document.getElementById('imageInput').click(); }
         function handleFileSelect(event) { if (event.target.files[0]) processFile(event.target.files[0]); }
 
-        // --- API通信 ---
+        // --- メイン処理 (API通信) ---
         async function processFile(file) {
             const reader = new FileReader();
             reader.onload = (e) => document.getElementById('scan-preview').src = e.target.result;
@@ -297,11 +323,14 @@
                 bar.style.width = progress + '%';
             }, 200);
 
+            // localStorageから現在のモードを取得
+            const mode = localStorage.getItem('appraisal_mode') || 'default';
             const formData = new FormData();
             formData.append('image', file);
 
             try {
-                const response = await fetch('/api/appraise', {
+                // optionパラメータを設定に基づいて付与
+                const response = await fetch(`/api/appraise?option=${mode}`, {
                     method: 'POST',
                     body: formData
                 });
@@ -321,7 +350,7 @@
             }
         }
 
-        // --- 結果のレンダリング ---
+        // --- UI更新・画面遷移 ---
         function renderResult(data) {
             const final = data.final_decision || {};
             const ai = data.ai_filter_res || {};
@@ -339,7 +368,6 @@
             switchView('view-result');
         }
 
-        // --- 画面切り替え ---
         function switchView(viewId) {
             document.querySelectorAll('main > div').forEach(el => el.classList.add('hidden'));
             document.getElementById(viewId).classList.remove('hidden');
@@ -347,20 +375,10 @@
             lucide.createIcons();
         }
 
-        // --- カメラ停止 ---
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(t => t.stop());
-                stream = null;
-            }
-        }
-
-        // --- アプリリセット ---
         function resetApp() {
             stopCamera();
             document.getElementById('imageInput').value = "";
             document.getElementById('scan-bar').style.width = '0%';
-            // 回転状態を一度リセット（表面に戻す）
             document.getElementById('lens-flip').classList.remove('is-flipped');
             switchView('view-home');
             startCamera();
@@ -368,11 +386,12 @@
 
         function showSettings() { switchView('view-settings'); }
 
-        // 初期化
+        // --- 初期化 ---
         document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
             lucide.createIcons();
             startCamera();
-            startAutoFlip(); // 自動回転開始
+            startAutoFlip();
         });
     </script>
 </body>
