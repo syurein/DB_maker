@@ -248,7 +248,7 @@
         // --- 設定管理 ---
         function saveSettings() {
             const isChecked = document.getElementById('mode-toggle').checked;
-            localStorage.setItem('appraisal_mode', !isChecked ? 'default' : 'non');
+            localStorage.setItem('appraisal_mode', !isChecked ? 'fast' : 'default');
         }
 
         function loadSettings() {

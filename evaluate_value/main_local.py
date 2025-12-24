@@ -92,8 +92,8 @@ class HybridBrain:
             }
 
         # --- パターンB: 市場データがある場合 ---
-        # 3. データのフィルタリングと統計計算
-        valid_idx = self.filter_estimator.filter_by_name_only(t_name, raw_records)
+        # 3. データのフィルタリングと統計計算 
+        valid_idx = self.filter_estimator.filter_by_name_only(t_name, raw_records,option=option, ai_price=int(re.sub(r'\D', '', str(v_res.get("ai_price_c", 0)))) if v_res.get("ai_price_c", 0) else 0)
         valid_records = [raw_records[i] for i in valid_idx]
         
         v_prices = [r["price"] for r in valid_records]
@@ -163,7 +163,7 @@ def index():
 def appraise():
     # 【対策4】オプションのバリデーション
     option = request.args.get('option', 'default')
-    if option not in ['default', 'non']:
+    if option not in ['default', 'fast']:
         option = 'default'
 
     # 【対策5】ファイルの存在と形式チェック
@@ -206,4 +206,4 @@ def request_entity_too_large(e):
     return jsonify({"error": "File is too large (Max 5MB)"}), 413
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 7860)),debug=True)

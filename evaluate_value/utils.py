@@ -39,7 +39,7 @@ class VisionAppraiser:
             この商品を特定し、Pythonのreモジュールで検索するための正規表現リストを作成してください。
             また、楽天市場で検索するための最適なキーワードも抽出してください。
             できるだけ多くヒットするよ追うなキーワードや正規表現リストを選んでください。
-            
+            AIの予測価格も正確に予測してください。
             【出力形式(JSON)】
             {
                 "tentative_name": "商品名",
@@ -184,31 +184,45 @@ class StatisticalEngine:
         
         return {"min_a": int(mean - margin), "max_b": int(mean + margin), "mean": int(mean), "n": n_clean}
 
+
+
+
 # --- 5. AI Filter & Estimator ---
 class AI_Filter_Estimator:
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, model_name: str = "gemini-2.5-pro"):
         self.model_name = model_name
 
-    def filter_by_name_only(self, target_name: str, records: list) -> list:
+    def filter_by_name_only(self, target_name: str, records: list,option: str,ai_price: int =0) -> list:
+        rate=0.4 #価格誤差の許容範囲
         if not client or not records: return []
-        candidates = "\n".join([f"{i}: {r['product_name']}" for i, r in enumerate(records)])
-        print(target_name)
-        prompt = f"商品名: {target_name}\nリスト:\n{candidates}\n上記から明らかに商品名が異なるものやケースなどのアクセサリ、付属品のみのインデックスを除外した『valid_indices』をJSONで返して。{{'valid_indices': [4, 5, 6, 7, 8, 9]}}"
-        
-        try:
-            response = client.models.generate_content(
-                model=self.model_name, contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json")
-            )
+        if option == 'fast':
+            valid_indices = []
+            pattern = re.compile(re.escape(target_name), re.IGNORECASE)
+            for i, r in enumerate(records):
+                if r['price']>=ai_price*rate and r['price']<=ai_price*(1+rate) and pattern.search(r['product_name']):
+                    valid_indices.append(i)
+            return valid_indices
+        else:
+            candidates = "\n".join([f"{i}: {r['product_name']}" for i, r in enumerate(records)])
+            
+            print(target_name)
+            prompt = f"商品名: {target_name}\nリスト:\n{candidates}\n上記から明らかに商品名が異なるものやケースなどのアクセサリ、付属品のみのインデックスを除外した『valid_indices』をJSONで返して。{{'valid_indices': [4, 5, 6, 7, 8, 9]}}"
+            
+            try:
+                response = client.models.generate_content(
+                    model=self.model_name, contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                )
 
-            res = json.loads(response.text)
-            print(res)
-            return [int(i) for i in res["valid_indices"] if int(i) < len(records)]
-        except Exception as e:
-            # 何が起きたか出力する
-            print(f"Error during AI filtering: {e}")
-            # エラー時は全件返す（または空を返す）安全策
-            return list(range(len(records)))
+                res = json.loads(response.text)
+                print(res)
+                
+                return [int(i) for i in res["valid_indices"] if int(i) < len(records)]
+            except Exception as e:
+                # 何が起きたか出力する
+                print(f"Error during AI filtering: {e}")
+                # エラー時は全件返す（または空を返す）安全策
+                return list(range(len(records)))
 
     def estimate_final_price(self, target_name: str, filtered_records: list, stats_res: dict) -> dict:
         if not client: return {"final_ai_price": 0, "reasoning": "Error"}
