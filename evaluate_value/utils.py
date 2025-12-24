@@ -199,7 +199,7 @@ class AI_Filter_Estimator:
             valid_indices = []
             pattern = re.compile(re.escape(target_name), re.IGNORECASE)
             for i, r in enumerate(records):
-                if r['price']>=ai_price*rate and r['price']<=ai_price*(1+rate) and pattern.search(r['product_name']):
+                if r['price']>=ai_price*rate and r['price']<=ai_price*(2-rate):
                     valid_indices.append(i)
             return valid_indices
         else:
