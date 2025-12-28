@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dragon Eye - Whitest Edition</title>
+    <title>Dragon Eye - Reverse Gesture Edition</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -15,6 +15,7 @@
             background-color: #ffffff;
             color: #1e293b;
             -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
 
         /* 3Dフリップ設定 */
@@ -22,7 +23,7 @@
         .flip-container {
             width: 100%;
             height: 100%;
-            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
             transform-style: preserve-3d;
         }
         .flip-container.is-flipped { transform: rotateY(180deg); }
@@ -46,9 +47,10 @@
         .face-video {
             transform: rotateY(180deg);
             background: #000;
+            z-index: 1;
         }
 
-        /* スキャンアニメーション */
+        /* アニメーション定義 */
         @keyframes scan-line {
             0% { top: 0%; opacity: 0; }
             10% { opacity: 1; }
@@ -70,7 +72,7 @@
             border-radius: 9999px;
         }
 
-        /* --- 修正済みトグルスイッチ --- */
+        /* トグルスイッチ */
         .toggle-dot { 
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s;
         }
@@ -78,6 +80,15 @@
         input:checked ~ .toggle-dot { 
             transform: translateX(24px); 
             border-color: #f97316;
+        }
+
+        /* モードバッジのアニメーション */
+        .badge-enter {
+            animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes badge-pop {
+            0% { transform: translateX(-50%) scale(0.5); opacity: 0; }
+            100% { transform: translateX(-50%) scale(1); opacity: 1; }
         }
     </style>
 </head>
@@ -100,10 +111,10 @@
         <div id="view-home" class="flex flex-col items-center justify-center w-full h-[70vh] animate-fade-in">
             <div class="mb-8 text-center space-y-1">
                 <h2 class="text-2xl font-bold text-slate-800">商品査定</h2>
-                <p class="text-slate-500 text-sm font-medium">レンズをタップしてスキャンを開始</p>
+                <p class="text-slate-500 text-sm font-medium">レンズをスワイプして起動</p>
             </div>
 
-            <div class="relative group cursor-pointer mb-10 perspective-1000" onclick="captureImage()">
+            <div id="lens-container" class="relative group cursor-pointer mb-10 perspective-1000 select-none touch-none">
                 <div class="absolute inset-0 bg-orange-400 rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-opacity duration-500 animate-pulse"></div>
                 
                 <div class="relative w-64 h-64 rounded-full border-4 border-white shadow-2xl bg-slate-900 overflow-hidden transition-all duration-300 ring-4 ring-orange-500/20">
@@ -112,24 +123,33 @@
                             <div class="bg-white/20 p-4 rounded-full mb-3 backdrop-blur-sm">
                                 <i data-lucide="aperture" class="w-12 h-12 text-white animate-[spin_10s_linear_infinite]"></i>
                             </div>
-                            <span class="text-lg font-black tracking-widest uppercase">Ready to Scan</span>
-                            <span class="text-[10px] opacity-70 mt-1 font-bold">Dragon Eye Engine v2.0</span>
+                            <span class="text-lg font-black tracking-widest uppercase">Ready</span>
+                            
+                            <div class="absolute bottom-8 w-full px-10 flex justify-between text-[9px] font-black uppercase tracking-wider opacity-60">
+                                <span class="flex items-center gap-1"><i data-lucide="arrow-left" class="w-3 h-3"></i> Fast</span>
+                                <span class="flex items-center gap-1">High <i data-lucide="arrow-right" class="w-3 h-3"></i></span>
+                            </div>
                         </div>
 
-                        <div class="face face-video">
+                        <div class="face face-video relative">
                             <video id="video" autoplay playsinline muted></video>
-                            <div class="absolute inset-0 border-[20px] border-black/10 pointer-events-none"></div>
-                            <div class="absolute inset-0 bg-gradient-to-t from-orange-500/30 to-transparent"></div>
-                            <div class="absolute top-1/2 left-0 w-full h-px bg-orange-400/50"></div>
-                            <div class="absolute top-0 left-1/2 w-px h-full bg-orange-400/50"></div>
-                        </div>
-                    </div>
+                            
+                            <div id="active-mode-badge" class="absolute top-6 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/20 shadow-lg hidden">
+                                <span id="badge-text" class="text-[10px] font-black text-white tracking-widest uppercase flex items-center gap-2">
+                                    FAST MODE
+                                </span>
+                            </div>
 
-                    <div class="absolute inset-0 z-10 flex flex-col items-center justify-end pb-8 pointer-events-none">
-                        <div class="bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/30 transform transition-all duration-500 group-active:scale-95">
-                            <span class="text-[10px] font-black text-white tracking-widest uppercase flex items-center gap-2">
-                                <i data-lucide="zap" class="w-3 h-3 fill-white"></i> Tap to Action
-                            </span>
+                            <div class="absolute inset-0 border-[20px] border-black/10 pointer-events-none"></div>
+                            <div class="absolute inset-0 bg-gradient-to-t from-orange-500/30 to-transparent pointer-events-none"></div>
+                            <div class="absolute top-1/2 left-0 w-full h-px bg-orange-400/50 pointer-events-none"></div>
+                            <div class="absolute top-0 left-1/2 w-px h-full bg-orange-400/50 pointer-events-none"></div>
+                            
+                            <div class="absolute bottom-6 w-full text-center pointer-events-none">
+                                <span class="bg-black/50 text-white text-[10px] px-3 py-1 rounded-full backdrop-blur-sm font-bold tracking-wider uppercase">
+                                    Tap to Scan
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -214,10 +234,10 @@
                 <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                     <div class="space-y-0.5">
                         <label class="text-sm font-black text-slate-800 uppercase tracking-tight">高精度AI査定</label>
-                        <p class="text-[10px] text-slate-400 font-medium leading-tight">OFF: 超高速モード<br>ON: 超高精度モード</p>
+                        <p class="text-[10px] text-slate-400 font-medium leading-tight">OFF: 超高速モード (Left Swipe)<br>ON: 超高精度モード (Right Swipe)</p>
                     </div>
                     <div class="relative inline-block w-12 h-6 align-middle select-none">
-                        <input type="checkbox" id="mode-toggle" onchange="saveSettings()" 
+                        <input type="checkbox" id="mode-toggle" onchange="toggleSettingsFromUI()" 
                                class="absolute block w-full h-full opacity-0 cursor-pointer z-20 outline-none"/>
                         <div class="toggle-bg block overflow-hidden h-6 rounded-full bg-slate-200 transition-colors duration-300"></div>
                         <div class="toggle-dot absolute top-0 left-0 w-6 h-6 bg-white rounded-full shadow border-2 border-slate-200 z-10 pointer-events-none"></div>
@@ -243,41 +263,131 @@
 
     <script>
         let stream = null;
-        let flipInterval = null;
+        
+        function setAppMode(modeName) {
+            localStorage.setItem('appraisal_mode', modeName);
+            document.getElementById('mode-toggle').checked = (modeName === 'default');
+        }
 
-        // --- 設定管理 ---
-        function saveSettings() {
+        function getAppMode() {
+            return localStorage.getItem('appraisal_mode') || 'fast';
+        }
+
+        function toggleSettingsFromUI() {
             const isChecked = document.getElementById('mode-toggle').checked;
-            localStorage.setItem('appraisal_mode', !isChecked ? 'fast' : 'default');
+            setAppMode(isChecked ? 'default' : 'fast');
         }
 
         function loadSettings() {
-            const mode = localStorage.getItem('appraisal_mode') || 'default';
+            const mode = getAppMode();
             document.getElementById('mode-toggle').checked = (mode === 'default');
         }
 
-        // --- 自動回転ロジック ---
-        function startAutoFlip() {
-            const flipContainer = document.getElementById('lens-flip');
-            if (flipInterval) clearInterval(flipInterval);
-            flipInterval = setInterval(() => {
-                const homeView = document.getElementById('view-home');
-                if (!homeView.classList.contains('hidden')) {
-                    flipContainer.classList.toggle('is-flipped');
+        // --- インタラクション制御 ---
+        const lensContainer = document.getElementById('lens-container');
+        let touchStartX = 0;
+        let isCameraActive = false;
+
+        lensContainer.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
+
+        lensContainer.addEventListener('touchend', async (e) => {
+            const touchEndX = e.changedTouches[0].screenX;
+            const diffX = touchEndX - touchStartX;
+
+            if (isCameraActive) {
+                if (Math.abs(diffX) < 10) {
+                    await captureImage();
+                } else if (Math.abs(diffX) > 50) {
+                    toggleCameraMode(false);
                 }
-            }, 3000);
+            } else {
+                // カメラ起動時のスワイプ判定
+                if (diffX > 50) {
+                    // 左から右 (→) : HIGH PRECISION (設定変更)
+                    setAppMode('default');
+                    toggleCameraMode(true);
+                    showBadge('HIGH PRECISION', 'sparkles', 'text-emerald-400');
+                } 
+                else if (diffX < -50) {
+                    // 右から左 (←) : FAST MODE (設定変更)
+                    setAppMode('fast');
+                    toggleCameraMode(true);
+                    showBadge('FAST MODE', 'bolt', 'text-orange-400');
+                } 
+                else if (Math.abs(diffX) < 10) {
+                    shakeLens();
+                }
+            }
+        });
+
+        // マウス操作（PC用）
+        lensContainer.addEventListener('mousedown', (e) => { touchStartX = e.screenX; });
+        lensContainer.addEventListener('mouseup', async (e) => {
+            const diffX = e.screenX - touchStartX;
+            if (!isCameraActive) {
+                // スワイプ判定 (ロジック入れ替え済み)
+                if (diffX > 50) { setAppMode('default'); toggleCameraMode(true); showBadge('HIGH PRECISION', 'sparkles', 'text-emerald-400'); }
+                else if (diffX < -50) { setAppMode('fast'); toggleCameraMode(true); showBadge('FAST MODE', 'bolt', 'text-orange-400'); }
+                else shakeLens();
+            } else {
+                if (Math.abs(diffX) < 10) await captureImage();
+                else if (Math.abs(diffX) > 50) toggleCameraMode(false);
+            }
+        });
+
+        async function toggleCameraMode(shouldOpen) {
+            const flipContainer = document.getElementById('lens-flip');
+            isCameraActive = shouldOpen;
+
+            if (shouldOpen) {
+                flipContainer.classList.add('is-flipped');
+                await startCamera(); 
+            } else {
+                flipContainer.classList.remove('is-flipped');
+                stopCamera();
+                hideBadge();
+            }
+        }
+
+        function shakeLens() {
+            const lens = document.getElementById('lens-container');
+            lens.style.transform = "translateX(5px)";
+            setTimeout(() => lens.style.transform = "translateX(-5px)", 50);
+            setTimeout(() => lens.style.transform = "translateX(5px)", 100);
+            setTimeout(() => lens.style.transform = "translateX(0)", 150);
+        }
+
+        // --- バッジ表示制御 ---
+        function showBadge(text, iconName, colorClass) {
+            const badge = document.getElementById('active-mode-badge');
+            const badgeText = document.getElementById('badge-text');
+            badgeText.innerHTML = `<i data-lucide="${iconName}" class="w-3 h-3 ${colorClass}"></i> <span class="${colorClass}">${text}</span>`;
+            lucide.createIcons();
+            badge.classList.remove('hidden');
+            badge.classList.add('badge-enter');
+        }
+
+        function hideBadge() {
+            const badge = document.getElementById('active-mode-badge');
+            badge.classList.add('hidden');
+            badge.classList.remove('badge-enter');
         }
 
         // --- カメラ制御 ---
         async function startCamera() {
             const video = document.getElementById('video');
+            if (stream) return;
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
                 });
                 video.srcObject = stream;
             } catch (err) {
-                console.error("Camera access denied:", err);
+                console.error(err);
+                alert("カメラの起動に失敗しました。");
+                toggleCameraMode(false);
             }
         }
 
@@ -285,18 +395,24 @@
             if (stream) {
                 stream.getTracks().forEach(t => t.stop());
                 stream = null;
+                document.getElementById('video').srcObject = null;
             }
         }
 
         // --- 撮影・ファイル処理 ---
         async function captureImage() {
-            if (!stream) { await startCamera(); return; }
+            if (!stream) return;
+            const videoFace = document.querySelector('.face-video');
+            videoFace.style.backgroundColor = "white";
+            setTimeout(() => videoFace.style.backgroundColor = "black", 80);
+
             const video = document.getElementById('video');
             const canvas = document.getElementById('capture-canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0);
+            
             canvas.toBlob((blob) => {
                 const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
                 processFile(file);
@@ -314,6 +430,8 @@
 
             switchView('view-scanning');
             stopCamera();
+            isCameraActive = false;
+            hideBadge();
 
             const bar = document.getElementById('scan-bar');
             let progress = 0;
@@ -323,34 +441,30 @@
                 bar.style.width = progress + '%';
             }, 200);
 
-            // localStorageから現在のモードを取得
-            const mode = localStorage.getItem('appraisal_mode') || 'default';
+            const mode = getAppMode();
             const formData = new FormData();
             formData.append('image', file);
 
             try {
-                // optionパラメータを設定に基づいて付与
+                console.log("Appraising in mode:", mode);
                 const response = await fetch(`/api/appraise?option=${mode}`, {
                     method: 'POST',
                     body: formData
                 });
-
-                if (!response.ok) throw new Error("Server response error");
+                if (!response.ok) throw new Error("Server error");
                 const data = await response.json();
                 
                 clearInterval(interval);
                 bar.style.width = '100%';
                 setTimeout(() => renderResult(data), 600);
-
             } catch (error) {
                 clearInterval(interval);
-                console.error("Appraisal Failed:", error);
-                alert("査定に失敗しました。サーバーの設定を確認してください。");
+                console.error(error);
+                alert("通信エラーが発生しました。");
                 resetApp();
             }
         }
 
-        // --- UI更新・画面遷移 ---
         function renderResult(data) {
             const final = data.final_decision || {};
             const ai = data.ai_filter_res || {};
@@ -362,8 +476,8 @@
             document.getElementById('result-logic').innerText = final.logic || "NEURAL_NET";
             document.getElementById('result-conf').innerText = final.confidence_score || "0%";
             document.getElementById('result-samples').innerText = data.valid_records_count || 0;
-            document.getElementById('result-comment').innerText = ai.filter_reasoning || "詳細な分析データが取得できませんでした。";
-            document.getElementById('result-date').innerText = new Date().toLocaleString() + " 査定完了";
+            document.getElementById('result-comment').innerText = ai.filter_reasoning || "詳細情報なし";
+            document.getElementById('result-date').innerText = new Date().toLocaleString();
 
             switchView('view-result');
         }
@@ -377,21 +491,19 @@
 
         function resetApp() {
             stopCamera();
+            isCameraActive = false;
+            hideBadge();
             document.getElementById('imageInput').value = "";
             document.getElementById('scan-bar').style.width = '0%';
             document.getElementById('lens-flip').classList.remove('is-flipped');
             switchView('view-home');
-            startCamera();
         }
 
         function showSettings() { switchView('view-settings'); }
 
-        // --- 初期化 ---
         document.addEventListener('DOMContentLoaded', () => {
             loadSettings();
             lucide.createIcons();
-            startCamera();
-            startAutoFlip();
         });
     </script>
 </body>

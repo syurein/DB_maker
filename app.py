@@ -536,7 +536,7 @@ with gr.Blocks(title="メルカリScraper Queue") as demo:
     
     with gr.Row():
         keyword_input = gr.Textbox(label="検索キーワード", placeholder="例: iPhone 12")
-        limit_input = gr.Number(label="目標合計取得件数", value=50, precision=0)
+        limit_input = gr.Number(label="目標合計取得件数", value=1000, precision=0)
     
     with gr.Row():
         category_input = gr.Dropdown(label="カテゴリ", choices=CATEGORY_CHOICES)
@@ -548,11 +548,11 @@ with gr.Blocks(title="メルカリScraper Queue") as demo:
         sort_input = gr.Dropdown(label="並び順", choices=["おすすめ順", "新しい順", "価格の安い順", "価格の高い順", "いいね！順"], value="おすすめ順")
 
     with gr.Row():
-        workers_input = gr.Slider(label="並列ワーカー数", minimum=1, maximum=4, value=2, step=1)
+        workers_input = gr.Slider(label="並列ワーカー数", minimum=1, maximum=100, value=2, step=1)
         image_dl_input = gr.Checkbox(label="画像をダウンロードする", value=True)
         ai_healing_input = gr.Checkbox(label="AI修復を有効にする", value=True)
         headless_input = gr.Checkbox(label="ヘッドレスモード", value=True)
-        sleep_time = gr.Slider(label="ページ読み込み後の待機時間 (秒)", value=100, minimum=0, step=1,value=30)
+        sleep_time = gr.Slider(label="ページ読み込み後の待機時間 (秒)", minimum=0, step=1,value=30)
 
     add_btn = gr.Button("キューに追加 (予約)", variant="primary")
     message_box = gr.Markdown("")
